@@ -27,5 +27,3 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 &
 
 # === Wait for all background jobs to finish ===
 wait
-
-srun -A huytran1-ic --partition=IllinoisComputes-GPU --time=00:30:00 --nodes=1 --ntasks-per-node=1 --pty /bin/bash
