@@ -215,7 +215,7 @@ def get_env():
         sim_rate=0.5,
         max_step_duration=300.0,
         time_limit=duration,
-        failure_penalty=0.0,
+        failure_penalty=-1.0,
         terminate_on_time_limit=True,
         log_level="INFO",
     )
