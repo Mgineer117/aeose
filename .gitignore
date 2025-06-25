@@ -7,7 +7,7 @@ __pycache__/
 # C extensions
 *.so
 *.p
-
+bsk_rl/*
 # Distribution / packaging
 .Python
 build/
