@@ -1,40 +1,4 @@
-"""Basilisk dynamics models are given in ``bsk_rl.sim.dyn``.
-
-The dynamics model is the core of the satellite simulation, representing the physical
-properties of the satellite and its interactions with the environment. The dynamics model
-can be customized to represent different satellite configurations, actuator models, and
-instrument models.
-
-The dynamics model is selected using the ``dyn_type`` class property of the
-:class:`~bsk_rl.sats.Satellite`. Certain environment elements may require specific
-dynamics models, such as :class:`~bsk_rl.comm.LOSCommunication` requiring a dynamics
-model that inherits from :class:`~bsk_rl.sim.dyn.LOSCommDynModel` or :class:`~bsk_rl.sats.ImagingSatellite`
-requiring a dynamics model that inherits from :class:`~bsk_rl.sim.dyn.ImagingDynModel`.
-
-Setting Parameters
-------------------
-
-Customization of the dynamics model parameters is achieved through the ``sat_args``
-dictionary passed to the :class:`~bsk_rl.sats.Satellite` constructor. This dictionary is
-passed on to the dynamics model setup functions, which are called each time the simulator
-is reset.
-
-Properties
-----------
-
-The dynamics model provides a number of properties for easy access to the satellite state.
-These can be accessed directly from the dynamics model instance, or in the observation
-via the :class:`~bsk_rl.obs.SatProperties` observation.
-
-
-Aliveness Checking
-------------------
-
-Certain functions in the dynamics model are decorated with the :func:`~bsk_rl.utils.functional.aliveness_checker`
-decorator. These functions are called at each step to check if the satellite is still
-operational, returning true if the satellite is still alive.
-
-"""
+"""Basic dynamics model for BSK-RL."""
 
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Iterable, Optional
@@ -44,17 +8,11 @@ from Basilisk.simulation import (
     ReactionWheelPower,
     extForceTorque,
     facetDragDynamicEffector,
-    groundLocation,
-    partitionedStorageUnit,
     simpleBattery,
-    simpleInstrument,
     simpleNav,
     simplePowerSink,
     simpleSolarPanel,
-    simpleStorageUnit,
     spacecraft,
-    spacecraftLocation,
-    spaceToGroundTransmitter,
 )
 from Basilisk.utilities import (
     RigidBodyKinematics,
@@ -70,7 +28,6 @@ from bsk_rl.utils.functional import (
     aliveness_checker,
     check_aliveness_checkers,
     default_args,
-    valid_func_name,
 )
 from bsk_rl.utils.orbital import random_orbit, rv2HN, rv2omega
 
@@ -254,6 +211,68 @@ class BasicDynamicsModel(DynamicsModel):
         HN = rv2HN(self.r_BN_N, self.v_BN_N)
         return HN @ omega_BH_N
 
+    def _compute_oes(self):
+        if not hasattr(self, "_oe_cache_time") or (
+            self._oe_cache_time != getattr(self.simulator, "time", None)
+        ):
+            self._oe_cache = orbitalMotion.rv2elem(
+                mu=self.mu, rVec=np.array(self.r_BN_N), vVec=np.array(self.v_BN_N)
+            )
+            self._oe_cache_time = getattr(self.simulator, "time", None)
+        return self._oe_cache
+
+    @property
+    def semi_major_axis(self):
+        """Semimajor axis of the satellite's orbit [km]."""
+        return self._compute_oes().a
+
+    @property
+    def eccentricity(self):
+        """Eccentricity of the satellite's orbit [-]."""
+        return self._compute_oes().e
+
+    @property
+    def inclination(self):
+        """Inclination of the satellite's orbit [rad]."""
+        return self._compute_oes().i
+
+    @property
+    def ascending_node(self):
+        """Longitude of ascending node of the satellite's orbit [rad]."""
+        return self._compute_oes().AN
+
+    @property
+    def argument_of_periapsis(self):
+        """Argument of periapsis of the satellite's orbit [rad]."""
+        return self._compute_oes().AP
+
+    @property
+    def true_anomaly(self):
+        """True anomaly of the satellite's orbit [rad]."""
+        return self._compute_oes().f
+
+    @property
+    def beta_angle(self):
+        """Beta angle of the satellite's orbit, between 0 and 2pi [rad].
+
+        The angle between the angular momentum vector and the sun direction vector.
+        """
+        r_BN_N = self.dynamics.r_BN_N
+        v_BN_N = self.dynamics.v_BN_N
+        h_N = np.cross(r_BN_N, v_BN_N)
+        r_SN_N = (
+            self.simulator.world.gravFactory.spiceObject.planetStateOutMsgs[
+                self.simulator.world.sun_index
+            ]
+            .read()
+            .PositionVector
+        )
+
+        beta = np.arccos(
+            np.dot(h_N, r_SN_N) / (np.linalg.norm(h_N) * np.linalg.norm(r_SN_N))
+        )
+        return beta
+
     @property
     def battery_charge(self):
         """Battery charge [W*s]."""
@@ -336,6 +355,7 @@ class BasicDynamicsModel(DynamicsModel):
             priority: Model priority.
             kwargs: Passed to other setup functions.
         """
+        self.mu = mu
         if rN is not None and vN is not None and oe is None:
             pass
         elif oe is not None and rN is None and vN is None:
@@ -717,546 +737,9 @@ class BasicDynamicsModel(DynamicsModel):
             self.powerMonitor.addPowerNodeToModel(powerRW.nodePowerOutMsg)
 
 
-class LOSCommDynModel(BasicDynamicsModel):
-    """For evaluating line-of-sight connections between satellites for communication."""
+__doc_title__ = "Dynamics Base"
 
-    def __init__(self, *args, **kwargs) -> None:
-        """Allow for line-of-sight checking between satellites.
-
-        Necessary for :class:`~bsk_rl.comm.LOSCommunication` to function.
-        """
-        super().__init__(*args, **kwargs)
-
-    def _setup_dynamics_objects(self, **kwargs) -> None:
-        super()._setup_dynamics_objects(**kwargs)
-        self.setup_los_comms(**kwargs)
-
-    @default_args(losMaximumRange=-1.0)
-    def setup_los_comms(
-        self, losMaximumRange: float, priority: int = 500, **kwargs
-    ) -> None:
-        """Set up line-of-sight visibility checking between satellites.
-
-        Args:
-            losMaximumRange: [m] Maximum range for line-of-sight visibility. -1 for unlimited.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        self.losComms = spacecraftLocation.SpacecraftLocation()
-        self.losComms.ModelTag = "losComms"
-        self.losComms.primaryScStateInMsg.subscribeTo(self.scObject.scStateOutMsg)
-        self.losComms.planetInMsg.subscribeTo(
-            self.world.gravFactory.spiceObject.planetStateOutMsgs[self.world.body_index]
-        )
-        self.losComms.rEquator = self.simulator.world.planet.radEquator
-        self.losComms.rPolar = self.simulator.world.planet.radEquator * 0.98
-        self.losComms.maximumRange = losMaximumRange
-
-        self.los_comms_ids = []
-
-        for sat_dyn in self.simulator.dynamics_list.values():
-            if sat_dyn != self and sat_dyn.satellite.name not in self.los_comms_ids:
-                self.losComms.addSpacecraftToModel(sat_dyn.scObject.scStateOutMsg)
-                self.los_comms_ids.append(sat_dyn.satellite.name)
-                sat_dyn.losComms.addSpacecraftToModel(self.scObject.scStateOutMsg)
-                sat_dyn.los_comms_ids.append(self.satellite.name)
-                if len(sat_dyn.los_comms_ids) == 1:
-                    sat_dyn.simulator.AddModelToTask(
-                        sat_dyn.task_name, sat_dyn.losComms, ModelPriority=priority
-                    )
-
-        if len(self.los_comms_ids) > 0:
-            self.simulator.AddModelToTask(
-                self.task_name, self.losComms, ModelPriority=priority
-            )
-
-
-class ImagingDynModel(BasicDynamicsModel):
-    """Equips the satellite with an instrument, storage unit, and transmitter."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        """Equips the satellite with an instrument, storage unit, and transmitter.
-
-        This dynamics model is used with :class:`~bsk_rl.sats.ImagingSatellite`. It
-        provides the satellite with the ability to take images of a point target. To
-        enable downlink, use :class:`GroundStationDynModel` and :class:`~bsk_rl.sim.world.GroundStationWorldModel`.
-        """
-        super().__init__(*args, **kwargs)
-
-    @property
-    def storage_level(self):
-        """Storage level [bits]."""
-        return self.storageUnit.storageUnitDataOutMsg.read().storageLevel
-
-    @property
-    def storage_level_fraction(self):
-        """Storage level as a fraction of capacity."""
-        return self.storage_level / self.storageUnit.storageCapacity
-
-    def _setup_dynamics_objects(self, **kwargs) -> None:
-        super()._setup_dynamics_objects(**kwargs)
-        self.setup_instrument_power_sink(**kwargs)
-        self.setup_transmitter_power_sink(**kwargs)
-        self.setup_instrument(**kwargs)
-        self.setup_transmitter(**kwargs)
-        self.setup_storage_unit(**kwargs)
-        self.setup_imaging_target(**kwargs)
-
-    @default_args(instrumentBaudRate=8e6)
-    def setup_instrument(
-        self, instrumentBaudRate: float, priority: int = 895, **kwargs
-    ) -> None:
-        """Set up the instrument data collection model.
-
-        Args:
-            instrumentBaudRate: [bits] Data generated by an image.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        self.instrument = simpleInstrument.SimpleInstrument()
-        self.instrument.ModelTag = "instrument" + self.satellite.name
-        self.instrument.nodeBaudRate = (
-            instrumentBaudRate / self.dyn_rate
-        )  # makes imaging instantaneous
-        self.instrument.nodeDataName = "Instrument" + self.satellite.name
-        self.simulator.AddModelToTask(
-            self.task_name, self.instrument, ModelPriority=priority
-        )
-
-    @default_args(transmitterBaudRate=-8e6, transmitterNumBuffers=100)
-    def setup_transmitter(
-        self,
-        transmitterBaudRate: float,
-        instrumentBaudRate: float,
-        transmitterNumBuffers: int,
-        priority: int = 798,
-        **kwargs,
-    ) -> None:
-        """Set up the transmitter model for downlinking data.
-
-        Args:
-            transmitterBaudRate: [baud] Rate of data downlink. Should be negative.
-            instrumentBaudRate: [bits] Image size, used to set packet size.
-            transmitterNumBuffers: Number of transmitter buffers
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        if transmitterBaudRate > 0:
-            self.logger.warning("transmitterBaudRate should probably be negative.")
-        self.transmitter = spaceToGroundTransmitter.SpaceToGroundTransmitter()
-        self.transmitter.ModelTag = "transmitter" + self.satellite.name
-        self.transmitter.nodeBaudRate = transmitterBaudRate  # baud
-        # set packet size equal to the size of a single image
-        self.transmitter.packetSize = -instrumentBaudRate  # bits
-        self.transmitter.numBuffers = transmitterNumBuffers
-        self.simulator.AddModelToTask(
-            self.task_name, self.transmitter, ModelPriority=priority
-        )
-
-    @default_args(instrumentPowerDraw=-30.0)
-    def setup_instrument_power_sink(
-        self, instrumentPowerDraw: float, priority: int = 897, **kwargs
-    ) -> None:
-        """Set the instrument power sink parameters.
-
-        The instrument draws power when in an imaging task, representing the power cost
-        of operating the instrument.
-
-        Args:
-            instrumentPowerDraw: [W] Power draw when instrument is enabled.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        if instrumentPowerDraw > 0:
-            self.logger.warning(
-                "instrumentPowerDraw should probably be zero or negative."
-            )
-        self.instrumentPowerSink = simplePowerSink.SimplePowerSink()
-        self.instrumentPowerSink.ModelTag = "insPowerSink" + self.satellite.name
-        self.instrumentPowerSink.nodePowerOut = instrumentPowerDraw
-        self.simulator.AddModelToTask(
-            self.task_name, self.instrumentPowerSink, ModelPriority=priority
-        )
-        self.powerMonitor.addPowerNodeToModel(self.instrumentPowerSink.nodePowerOutMsg)
-
-    @default_args(transmitterPowerDraw=-15.0)
-    def setup_transmitter_power_sink(
-        self, transmitterPowerDraw: float, priority: int = 896, **kwargs
-    ) -> None:
-        """Set the transmitter power sink parameters.
-
-        The transmitter draws power when in a downlink task, representing the power cost
-        of downlinking data.
-
-        Args:
-            transmitterPowerDraw: [W] Power draw when transmitter is enabled.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        if transmitterPowerDraw > 0:
-            self.logger.warning(
-                "transmitterPowerDraw should probably be zero or negative."
-            )
-        self.transmitterPowerSink = simplePowerSink.SimplePowerSink()
-        self.transmitterPowerSink.ModelTag = "transPowerSink" + self.satellite.name
-        self.transmitterPowerSink.nodePowerOut = transmitterPowerDraw
-        self.simulator.AddModelToTask(
-            self.task_name, self.transmitterPowerSink, ModelPriority=priority
-        )
-        self.powerMonitor.addPowerNodeToModel(self.transmitterPowerSink.nodePowerOutMsg)
-
-    @default_args(
-        dataStorageCapacity=20 * 8e6,
-        bufferNames=None,
-        storageUnitValidCheck=False,
-        storageInit=0,
-    )
-    def setup_storage_unit(
-        self,
-        dataStorageCapacity: int,
-        storageUnitValidCheck: bool,
-        storageInit: int,
-        transmitterNumBuffers: Optional[int] = None,
-        bufferNames: Optional[Iterable[str]] = None,
-        priority: int = 699,
-        **kwargs,
-    ) -> None:
-        """Configure the storage unit and its buffers.
-
-        Separate buffers can be used to track imaging of different targets. Often, the
-        buffer names will be set up by satellite based on the scenario configuration.
-
-        Args:
-            dataStorageCapacity: [bits] Maximum data that can be stored.
-            transmitterNumBuffers: Number of unit buffers. Not necessary if ``bufferNames``
-                are given.
-            bufferNames: List of buffer names to use. Named by number if ``None``.
-            storageUnitValidCheck: If ``True``, enforce that the storage level is below
-                the storage capacity when checking aliveness.
-            storageInit: [bits] Initial storage level.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        self.storageUnit = partitionedStorageUnit.PartitionedStorageUnit()
-        self.storageUnit.ModelTag = "storageUnit" + self.satellite.name
-        self.storageUnit.storageCapacity = dataStorageCapacity  # bits
-        self.storageUnit.addDataNodeToModel(self.instrument.nodeDataOutMsg)
-        self.storageUnit.addDataNodeToModel(self.transmitter.nodeDataOutMsg)
-        self.storageUnitValidCheck = storageUnitValidCheck
-        # Add all of the targets to the data buffer
-        if bufferNames is None:
-            for buffer_idx in range(transmitterNumBuffers):
-                self.storageUnit.addPartition(str(buffer_idx))
-        else:
-            if transmitterNumBuffers is not None and transmitterNumBuffers != len(
-                bufferNames
-            ):
-                raise ValueError(
-                    "transmitterNumBuffers cannot be different than len(bufferNames)."
-                )
-            for buffer_name in bufferNames:
-                self.storageUnit.addPartition(buffer_name)
-
-        if storageInit != 0:
-            if storageInit > dataStorageCapacity or storageInit < 0:
-                self.logger.warning(
-                    f"Initial storage level {storageInit} incompatible with its capacity {dataStorageCapacity}."
-                )
-            self.storageUnit.setDataBuffer(["STORED DATA"], [int(storageInit)])
-
-        # Add the storage unit to the transmitter
-        self.transmitter.addStorageUnitToTransmitter(
-            self.storageUnit.storageUnitDataOutMsg
-        )
-
-        self.simulator.AddModelToTask(
-            self.task_name, self.storageUnit, ModelPriority=priority
-        )
-
-    @aliveness_checker
-    def data_storage_valid(self) -> bool:
-        """Check that the buffer has not run out of space.
-
-        Only is checked if ``storageUnitValidCheck`` is ``True``; otherwise, a full storage
-        unit will prevent additional data from being stored but will not cause the satellite
-        to be considered dead.
-        """
-        storage_check = self.storageUnitValidCheck
-        if storage_check:
-            return self.storage_level < self.storageUnit.storageCapacity or np.isclose(
-                self.storage_level, self.storageUnit.storageCapacity
-            )
-        else:
-            return True
-
-    @default_args(
-        groundLocationPlanetRadius=orbitalMotion.REQ_EARTH * 1e3,
-        imageTargetMinimumElevation=np.radians(45.0),
-        imageTargetMaximumRange=-1,
-    )
-    def setup_imaging_target(
-        self,
-        groundLocationPlanetRadius: float,
-        imageTargetMinimumElevation: float,
-        imageTargetMaximumRange: float,
-        priority: int = 2000,
-        **kwargs,
-    ) -> None:
-        """Add a generic imaging target to dynamics.
-
-        The target must be updated with a particular location when used.
-
-        Args:
-            groundLocationPlanetRadius: [m] Radius of ground locations from center of planet.
-            imageTargetMinimumElevation: [rad] Minimum elevation angle from target to
-                satellite when imaging.
-            imageTargetMaximumRange: [m] Maximum range from target to satellite when
-                imaging. -1 to disable.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        self.imagingTarget = groundLocation.GroundLocation()
-        self.imagingTarget.ModelTag = "ImagingTarget"
-        self.imagingTarget.planetRadius = groundLocationPlanetRadius
-        self.imagingTarget.specifyLocation(0.0, 0.0, 1000.0)
-        self.imagingTarget.planetInMsg.subscribeTo(
-            self.world.gravFactory.spiceObject.planetStateOutMsgs[self.world.body_index]
-        )
-        self.imagingTarget.minimumElevation = imageTargetMinimumElevation
-        self.imagingTarget.maximumRange = imageTargetMaximumRange
-
-        self.simulator.AddModelToTask(
-            self.world.world_task_name,
-            self.imagingTarget,
-            ModelPriority=priority,
-        )
-        self.imagingTarget.addSpacecraftToModel(self.scObject.scStateOutMsg)
-
-    def reset_for_action(self) -> None:
-        """Shut off power sinks unless the transmitter or instrument is being used."""
-        super().reset_for_action()
-        self.transmitter.dataStatus = 0
-        self.transmitterPowerSink.powerStatus = 0
-        self.instrumentPowerSink.powerStatus = 0
-
-
-class ContinuousImagingDynModel(ImagingDynModel):
-    """Equips the satellite for continuous nadir imaging."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        """Equips the satellite for continuous nadir imaging.
-
-        Equips satellite with an instrument, storage unit, and transmitter
-        for continuous nadir imaging. A single data buffer is used for storage, and data
-        is accumulated continuously while imaging. The imaging target is fixed at the
-        center of the Earth for nadir imaging.
-        """
-        super().__init__(*args, **kwargs)
-
-    @default_args(instrumentBaudRate=8e6)
-    def setup_instrument(
-        self, instrumentBaudRate: float, priority: int = 895, **kwargs
-    ) -> None:
-        """Set up the continuous instrument model.
-
-        Args:
-            instrumentBaudRate: [baud] Data generation rate step when continuously imaging.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        self.instrument = simpleInstrument.SimpleInstrument()
-        self.instrument.ModelTag = "instrument" + self.satellite.name
-        self.instrument.nodeBaudRate = instrumentBaudRate  # make imaging instantaneous
-        self.instrument.nodeDataName = "Instrument" + self.satellite.name
-        self.simulator.AddModelToTask(
-            self.task_name, self.instrument, ModelPriority=priority
-        )
-
-    @default_args(
-        dataStorageCapacity=20 * 8e6,
-        storageUnitValidCheck=False,
-        storageInit=0,
-    )
-    def setup_storage_unit(
-        self,
-        dataStorageCapacity: int,
-        storageUnitValidCheck: bool,
-        storageInit: int,
-        priority: int = 699,
-        **kwargs,
-    ) -> None:
-        """Configure the storage unit and its buffers.
-
-        Args:
-            dataStorageCapacity: [bits] Maximum data that can be stored.
-            storageUnitValidCheck: If True, check that the storage level is below the
-                storage capacity.
-            storageInit: [bits] Initial storage level.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        self.storageUnit = simpleStorageUnit.SimpleStorageUnit()
-        self.storageUnit.ModelTag = "storageUnit" + self.satellite.name
-        self.storageUnit.storageCapacity = dataStorageCapacity  # bits
-        self.storageUnit.addDataNodeToModel(self.instrument.nodeDataOutMsg)
-        self.storageUnit.addDataNodeToModel(self.transmitter.nodeDataOutMsg)
-        self.storageUnitValidCheck = storageUnitValidCheck
-        if storageInit > dataStorageCapacity or storageInit < 0:
-            self.logger.warning(
-                f"Initial storage level {storageInit} incompatible with its capacity {dataStorageCapacity}."
-            )
-        self.storageUnit.setDataBuffer(storageInit)
-
-        # Add the storage unit to the transmitter
-        self.transmitter.addStorageUnitToTransmitter(
-            self.storageUnit.storageUnitDataOutMsg
-        )
-
-        self.simulator.AddModelToTask(
-            self.task_name, self.storageUnit, ModelPriority=priority
-        )
-
-    @default_args(imageTargetMaximumRange=-1)
-    def setup_imaging_target(
-        self,
-        imageTargetMaximumRange: float = -1,
-        priority: int = 2000,
-        **kwargs,
-    ) -> None:
-        """Add a imaging target at the center of the Earth.
-
-        Args:
-            imageTargetMaximumRange: [m] Maximum range from target to satellite when
-                imaging. -1 to disable.
-            priority: Model priority.
-            kwargs: Passed to other setup functions.
-        """
-        self.imagingTarget = groundLocation.GroundLocation()
-        self.imagingTarget.ModelTag = "scanningTarget"
-        self.imagingTarget.planetRadius = 1e-6
-        self.imagingTarget.specifyLocation(0, 0, 0)
-        self.imagingTarget.planetInMsg.subscribeTo(
-            self.world.gravFactory.spiceObject.planetStateOutMsgs[self.world.body_index]
-        )
-        self.imagingTarget.minimumElevation = np.radians(-90)
-        self.imagingTarget.maximumRange = imageTargetMaximumRange
-
-        self.simulator.AddModelToTask(
-            self.world.world_task_name,
-            self.imagingTarget,
-            ModelPriority=priority,
-        )
-        self.imagingTarget.addSpacecraftToModel(self.scObject.scStateOutMsg)
-
-
-class GroundStationDynModel(ImagingDynModel):
-    """Model that connects satellite to world ground stations."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        """Model that connects satellite to world ground stations.
-
-        This model enables the use of ground stations defined in :class:`~bsk_rl.sim.world.GroundStationWorldModel`
-        for data downlink.
-        """
-        super().__init__(*args, **kwargs)
-
-    @classmethod
-    def _requires_world(cls) -> list[type["WorldModel"]]:
-        return super()._requires_world() + [world.GroundStationWorldModel]
-
-    def _setup_dynamics_objects(self, **kwargs) -> None:
-        super()._setup_dynamics_objects(**kwargs)
-        self.setup_ground_station_locations()
-
-    def setup_ground_station_locations(self) -> None:
-        """Connect the transmitter to ground stations."""
-        for groundStation in self.world.groundStations:
-            groundStation.addSpacecraftToModel(self.scObject.scStateOutMsg)
-            self.transmitter.addAccessMsgToTransmitter(groundStation.accessOutMsgs[-1])
-
-            if hasattr(self.satellite, "add_location_for_access_checking"):
-                self.satellite.add_location_for_access_checking(
-                    object=groundStation.ModelTag,
-                    r_LP_P=np.array(groundStation.r_LP_P_Init).flatten(),
-                    min_elev=groundStation.minimumElevation,
-                    type="ground_station",
-                )
-
-
-class FullFeaturedDynModel(GroundStationDynModel, LOSCommDynModel):
-    """Convenience class for a satellite with ground station and line-of-sight comms."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        """Convenience class for an imaging satellite with ground stations and line-of-sight communication."""
-        super().__init__(*args, **kwargs)
-
-
-class ConjunctionDynModel(BasicDynamicsModel):
-    """For evaluating conjunctions between satellites."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        """Model that evaluates conjunctions between satellites.
-
-        The simulation is terminated at the time of collision and a conjunction_valid failure is reported.
-        """
-        super().__init__(*args, **kwargs)
-        self.conjunctions = []
-
-    def _setup_dynamics_objects(self, **kwargs) -> None:
-        super()._setup_dynamics_objects(**kwargs)
-        self.setup_conjunctions(**kwargs)
-
-    @aliveness_checker
-    def conjunction_valid(self) -> bool:
-        """Check if conjunction has not occured."""
-        return len(self.conjunctions) == 0
-
-    @default_args(conjunction_radius=10)
-    def setup_conjunctions(self, conjunction_radius: float, **kwargs) -> None:
-        """Set up conjunction checking between satellites.
-
-        Args:
-            conjunction_radius: [m] Minimum distance for a conjunction.
-            kwargs: Passed to other setup functions.
-        """
-        self.conjunction_radius = conjunction_radius
-
-        for sat_dyn in self.simulator.dynamics_list.values():
-            if sat_dyn != self and isinstance(sat_dyn, ConjunctionDynModel):
-                self.simulator.createNewEvent(
-                    valid_func_name(
-                        f"conjunction_{self.satellite.name}_{sat_dyn.satellite.name}"
-                    ),
-                    macros.sec2nano(self.simulator.sim_rate),
-                    True,
-                    [
-                        f"np.linalg.norm(np.array({self.satellite._satellite_command}.dynamics.r_BN_N) - np.array({sat_dyn.satellite._satellite_command}.dynamics.r_BN_N))"
-                        + " <= "
-                        + f"{self.satellite._satellite_command}.dynamics.conjunction_radius + {sat_dyn.satellite._satellite_command}.dynamics.conjunction_radius"
-                    ],
-                    [
-                        self.satellite._info_command(
-                            f"collided with {sat_dyn.satellite.name}"
-                        ),
-                        sat_dyn.satellite._info_command(
-                            f"collided with {self.satellite.name}"
-                        ),
-                        f"{self.satellite._satellite_command}.dynamics.conjunctions.append({sat_dyn.satellite._satellite_command})",
-                        f"{sat_dyn.satellite._satellite_command}.dynamics.conjunctions.append({self.satellite._satellite_command})",
-                        f"[{self.satellite._satellite_command}.logger.warning('Collision occurred at t=0, may incorrectly report failure type') if self.sim_time == 0 else None]",
-                    ],
-                    terminal=True,
-                )
-
-
-__doc_title__ = "Dynamics Sims"
 __all__ = [
     "DynamicsModel",
     "BasicDynamicsModel",
-    "LOSCommDynModel",
-    "ImagingDynModel",
-    "ContinuousImagingDynModel",
-    "GroundStationDynModel",
-    "ConjunctionDynModel",
-    "FullFeaturedDynModel",
 ]

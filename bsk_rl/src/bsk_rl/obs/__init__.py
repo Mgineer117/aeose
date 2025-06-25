@@ -3,7 +3,7 @@
 Satellite observation types can be used to add information to the observation.
 :class:`Observation` provides an interface for creating new observation types. To
 configure the observation, set the ``observation_spec`` attribute of a
-:class:`~bsk_rl.env.scenario.satellites.Satellite` subclass. For example:
+:class:`~bsk_rl.sats.Satellite` subclass. For example:
 
 .. code-block:: python
 
@@ -22,7 +22,7 @@ configure the observation, set the ``observation_spec`` attribute of a
         ]
 
 The format of the observation can setting the ``obs_type`` attribute of the
-:class:`~bsk_rl.env.scenario.satellites.Satellite`. The default is ``np.ndarray``, but
+:class:`~bsk_rl.sats.Satellite`. The default is ``np.ndarray``, but
 it can also be set to a human-readable ``dict`` or a ``list``.
 
 Some commonly used observations are provided:
@@ -32,12 +32,14 @@ Some commonly used observations are provided:
 * :class:`Time` - Add simulation time to the observation.
 * :class:`OpportunityProperties` - Add information about upcoming targets or other ground access points to the observation.
 * :class:`Eclipse` - Add a tuple of the next orbit start and end.
+* :class:`ResourceRewardWeight` - Reports the weights of any randomized :class:`ResourceReward`.
 """
 
 from bsk_rl.obs.observations import (
     Eclipse,
     Observation,
     OpportunityProperties,
+    ResourceRewardWeight,
     SatProperties,
     Time,
 )
@@ -51,4 +53,5 @@ __all__ = [
     "Time",
     "OpportunityProperties",
     "Eclipse",
+    "ResourceRewardWeight",
 ]

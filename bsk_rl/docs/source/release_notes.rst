@@ -4,9 +4,10 @@ Release Notes
 Development - |version|
 -----------------------
 .. *Release Date: MMM. DD, YYYY*
+
 * Add an example script where reward is based on the probability of successfully observing targets covered 
   by clouds in the `Cloud Environment with Re-imaging <examples/cloud_environment_with_reimaging.ipynb>`_ example.
-* Add a conjunction checking dynamics model in :class:`~bsk_rl.dynamics.ConjunctionDynModel`.
+* Add a conjunction checking dynamics model in :class:`ConjunctionDynModel`.
 * Add utilities for relative motion state setup, :class:`~bsk_rl.utils.orbital.cd2hill`, :class:`~bsk_rl.utils.orbital.hill2cd`,
   and :class:`~bsk_rl.utils.orbital.relative_to_chief`.
 * Add a ``dtype`` argument to the environment (or individual satellites) and sets the default
@@ -15,7 +16,7 @@ Development - |version|
 * Add models and action for impulsive thrust and drift with a continuous action space (:class:`~bsk_rl.act.ImpulsiveThrust`).
 * Changed inconsistent uses of ``datastore`` to ``data_store``.
 * Added property ``data_store_kwargs`` to :class:`~bsk_rl.data.GlobalReward` that is unpacked in the
-  :class:`~bsk_rl.data.DataStore` constructor.
+  :class:`DataStore` constructor.
 * Implemented :class:`~bsk_rl.data.ResourceReward` to reward based on the level of a property in the satellite
   multiplied by some coefficient.
 * Allow rewarders to mark a satellite as truncated or terminated with the ``is_truncated`` and ``is_terminated``
@@ -28,6 +29,17 @@ Development - |version|
 * Add the ability to observe remaining time in :class:`~bsk_rl.obs.Time`.
 * Allow for the ``time_limit`` to be randomized.
 * Added observation for arbitrary relative states between two satellites in :class:`~bsk_rl.obs.RelativeProperties`.
+* Allow for the ``transmitterPacketSize`` to be specified. The default sets it to the instrument's baud rate.
+* Add a maximum range checking dynamics model in :class:`MaxRangeDynModel`. Useful for keeping an agent
+  in the vicinity of a target early in training.
+* Add properties in spacecraft dynamics for orbital element observations.
+* Fix an issue with failure penalties in the PettingZoo environment when the rewarder
+  does not return a reward for a satellite.
+* Allow for per-episode randomization of :class:`ResourceReward` weights and observation
+  of those weights with :class:`ResourceRewardWeight`.
+* Add :class:`ImpulsiveThrustHill` for impulsive thrust in the Hill frame.
+* Separate :class:`random_circular_orbit` and :class:`random_orbit` to avoid misleading
+  altitude argument.
 
 
 Version 1.1.0

@@ -62,6 +62,7 @@ class TestSatProperties:
             obs.SatProperties(
                 dict(prop="r_BN_N", module="dynamics"),
                 dict(prop="r_BN_N", norm=7000.0 * 1e3),
+                dict(prop="inclination", module="dynamics", norm=np.pi / 180),
             ),
         ]
         action_spec = [act.Drift()]
@@ -70,9 +71,7 @@ class TestSatProperties:
         "SatelliteTasking-v1",
         satellite=SatPropertiesSat(
             "Sputnik",
-            sat_args=SatPropertiesSat.default_sat_args(
-                oe=random_orbit(r_body=7000, alt=0)
-            ),
+            sat_args=SatPropertiesSat.default_sat_args(oe=random_orbit(a=7000, i=45)),
         ),
         scenario=UniformTargets(n_targets=0),
         rewarder=data.NoReward(),
@@ -86,6 +85,9 @@ class TestSatProperties:
         observation, info = self.env.reset()
         assert np.linalg.norm(observation[0:3]) == approx(7000.0 * 1e3)
         assert np.linalg.norm(observation[3:6]) == approx(1.0)
+        assert observation[6] == approx(45)
+        observation, reward, terminated, truncated, info = self.env.step(0)
+        assert observation[6] == approx(45)
 
 
 class TestTime:
@@ -208,3 +210,37 @@ class TestGroundStationProperties:
     def test_ground_station_state(self):
         observation, info = self.env.reset()
         assert sum(observation) > 0  # Check that there are downlink opportunities
+
+
+class TestResourceRewardWeight:
+    class ResourceSat(sats.ImagingSatellite):
+        dyn_type = dyn.ImagingDynModel
+        fsw_type = fsw.ImagingFSWModel
+        observation_spec = [obs.ResourceRewardWeight()]
+        action_spec = [act.Drift()]
+
+    env = gym.make(
+        "SatelliteTasking-v1",
+        satellite=ResourceSat(
+            "ResourceSat",
+            obs_type=dict,
+        ),
+        scenario=UniformTargets(n_targets=0),
+        rewarder=(
+            data.ResourceReward(
+                resource_fn=lambda sat: sat.simulator.sim_time, reward_weight=0.1
+            ),
+            data.ResourceReward(
+                resource_fn=lambda sat: sat.simulator.sim_time, reward_weight=1.0
+            ),
+        ),
+        sim_rate=1.0,
+        max_step_duration=10.0,
+        disable_env_checker=True,
+    )
+
+    def test_resource_reward_weight(self):
+        observation, info = self.env.reset()
+        observation, reward, terminated, truncated, info = self.env.step(0)
+        assert reward == 1.0 + 10.0
+        assert (observation["resource_reward_weight"] == [0.1, 1.0]).all()

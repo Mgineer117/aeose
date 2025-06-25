@@ -60,6 +60,7 @@ class Trainer:
 
         # Train loop
         eval_idx = 0
+        total_clock_time = 0
         with tqdm(
             total=self.timesteps + self.init_timesteps,
             initial=self.init_timesteps,
@@ -72,7 +73,6 @@ class Trainer:
                 batch, sample_time = self.sampler.collect_samples(
                     env=self.env, policy=self.policy, seed=self.seed
                 )
-                print(batch["states"])
                 loss_dict, timesteps, update_time = self.policy.learn(batch)
 
                 # Calculate expected remaining time
@@ -82,8 +82,14 @@ class Trainer:
                 avg_time_per_iter = elapsed_time / step
                 remaining_time = avg_time_per_iter * (self.timesteps - step)
 
+                total_clock_time += sample_time
+                total_clock_time += update_time
+
                 # Update environment steps and calculate time metrics
                 loss_dict[f"{self.policy.name}/analytics/timesteps"] = step + timesteps
+                loss_dict[f"{self.policy.name}/analytics/total_clock_time"] = (
+                    total_clock_time
+                )
                 loss_dict[f"{self.policy.name}/analytics/sample_time"] = sample_time
                 loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
                 loss_dict[f"{self.policy.name}/analytics/remaining_time (hr)"] = (
@@ -166,9 +172,13 @@ class Trainer:
         return eval_dict, image_array
 
     def discounted_return(self, rewards, gamma):
-        G = 0
-        for r in reversed(rewards):
-            G = r + gamma * G
+        G = 0.0
+        for i, r in enumerate(reversed(rewards)):
+            if np.isnan(r):
+                raise ValueError(
+                    f"NaN detected in rewards at position {len(rewards) - 1 - i}"
+                )
+            G = float(r) + gamma * G
         return G
 
     def write_log(self, logging_dict: dict, step: int, eval_log: bool = False):
