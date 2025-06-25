@@ -6,8 +6,8 @@ __pycache__/
 
 # C extensions
 *.so
-*.p
-bsk_rl/*
+
+
 # Distribution / packaging
 .Python
 build/
@@ -57,8 +57,6 @@ coverage.xml
 # Translations
 *.mo
 *.pot
-*.p
-*.csv
 
 # Django stuff:
 *.log
@@ -149,9 +147,6 @@ wandb
 
 # log/eval_log/*
 log/train_log/*
-
-# Old test files
-old_main.py
 
 # Ignore all shell scripts (any .sh files)
 *.sh
