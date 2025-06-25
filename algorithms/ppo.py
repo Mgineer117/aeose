@@ -68,3 +68,12 @@ class PPO_Algorithm(nn.Module):
             K=self.args.K_epochs,
             device=self.args.device,
         )
+
+        if self.args.load_model:
+            model_path = (
+                f"model/model({'_'.join(str(x) for x in self.args.actor_fc_dim)}).pth"
+            )
+
+            checkpoint = torch.load(model_path, map_location=self.args.device)
+            self.policy.actor.load_state_dict(checkpoint)
+            print(f"model at {model_path} is loaded!")

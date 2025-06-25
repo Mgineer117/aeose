@@ -40,7 +40,7 @@ def get_args():
     parser.add_argument(
         "--eps-clip", type=float, default=0.2, help="Base learning rate."
     )
-    parser.add_argument("--actor-fc-dim", type=int, nargs="+", default=[64, 64])
+    parser.add_argument("--actor-fc-dim", type=int, nargs="+", default=[256, 256])
     parser.add_argument(
         "--critic-fc-dim", type=list, default=[128, 128], help="Base learning rate."
     )
@@ -82,6 +82,11 @@ def get_args():
     )
     parser.add_argument(
         "--rendering",
+        action="store_true",
+        help="Path to a directory for storing the log.",
+    )
+    parser.add_argument(
+        "--load-model",
         action="store_true",
         help="Path to a directory for storing the log.",
     )
