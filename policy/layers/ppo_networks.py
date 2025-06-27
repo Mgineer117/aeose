@@ -5,9 +5,9 @@ import torch.nn.functional as F
 from torch.distributions import Categorical, MultivariateNormal, Normal
 
 from policy.layers.building_blocks import MLP
+from policy.base import Base
 
-
-class PPO_Actor(nn.Module):
+class PPO_Actor(Base):
     """
     Psi Advantage Function: Psi(s,a) - (1/|A|)SUM_a' Psi(s, a')
     """
@@ -19,8 +19,9 @@ class PPO_Actor(nn.Module):
         action_dim: int,
         is_discrete: bool,
         activation: nn.Module = nn.Tanh(),
+        device = torch.device("cpu")
     ):
-        super(PPO_Actor, self).__init__()
+        super().__init__(device=device)
 
         self.state_dim = np.prod(input_dim)
         self.action_dim = np.prod(action_dim)

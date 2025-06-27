@@ -17,9 +17,9 @@ class UniformRandom(Base):
         state_dim: int,
         action_dim: int,
         is_discrete: bool,
-        device: str = "cpu",
+        device = torch.device("cpu"),
     ):
-        super(UniformRandom, self).__init__()
+        super().__init__(device=device)
 
         # constants
         self.name = "UniformRandom"

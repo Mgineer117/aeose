@@ -18,7 +18,7 @@ def run(args, seed, unique_id, exp_time):
 
     # get env
     env = get_env()
-    env.max_steps = 100
+    env.max_steps = 200
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
     args.episode_len = env.max_steps
@@ -31,6 +31,10 @@ def run(args, seed, unique_id, exp_time):
         from algorithms.ppo import PPO_Algorithm
 
         algo = PPO_Algorithm(env=env, logger=logger, writer=writer, args=args)
+    elif args.algo_name == "ddpg":
+        from algorithms.ddpg import DDPG_Algorithm
+
+        algo = DDPG_Algorithm(env=env, logger=logger, writer=writer, args=args)
     else:
         raise NotImplementedError(f"{args.algo_name} is not implemented.")
 

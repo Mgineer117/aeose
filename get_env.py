@@ -212,10 +212,10 @@ def get_env():
         ),
         scenario=targets,
         rewarder=data.UniqueImageReward(),
-        sim_rate=0.5,
+        sim_rate=1.0,
         max_step_duration=300.0,
         time_limit=duration,
-        failure_penalty=-5.0,
+        failure_penalty=-1.0,
         terminate_on_time_limit=True,
         log_level="INFO",
     )

@@ -2,7 +2,7 @@ import os
 import time
 from collections import deque
 from copy import deepcopy
-
+from utils.rl import estimate_advantages
 import gymnasium as gym
 import numpy as np
 import torch
@@ -46,7 +46,7 @@ class Trainer:
         self.eval_interval = int(self.timesteps / self.log_interval)
 
         # initialize the essential training components
-        self.last_min_return_mean = 1e10
+        self.last_max_return_mean = -1e10
         self.last_min_return_std = 1e10
 
         self.rendering = rendering
@@ -71,7 +71,7 @@ class Trainer:
                 self.policy.train()
 
                 batch, sample_time = self.sampler.collect_samples(
-                    env=self.env, policy=self.policy, seed=self.seed
+                    policy=self.policy, seed=self.seed
                 )
                 loss_dict, timesteps, update_time = self.policy.learn(batch)
 
@@ -87,7 +87,7 @@ class Trainer:
 
                 # Update environment steps and calculate time metrics
                 loss_dict[f"{self.policy.name}/analytics/timesteps"] = step + timesteps
-                loss_dict[f"{self.policy.name}/analytics/total_clock_time"] = (
+                loss_dict[f"{self.policy.name}/analytics/total_clock_time (s)"] = (
                     total_clock_time
                 )
                 loss_dict[f"{self.policy.name}/analytics/sample_time"] = sample_time
@@ -95,6 +95,9 @@ class Trainer:
                 loss_dict[f"{self.policy.name}/analytics/remaining_time (hr)"] = (
                     remaining_time / 3600
                 )  # Convert to hours
+                loss_dict[f"{self.policy.name}/analytics/discounted_return"] = self.average_discounted_return(batch["rewards"], batch["terminals"], self.policy.gamma)
+
+                
 
                 self.write_log(loss_dict, step=step)
 
@@ -145,39 +148,69 @@ class Trainer:
                     image_array.append(image)
 
                 next_state, rew, term, trunc, infos = self.env.step(np.argmax(a))
+                if t == self.env.max_steps - 1:
+                    # safe truncation
+                    trunc = True
                 done = term or trunc
 
                 state = next_state
                 ep_reward.append(rew)
 
                 if done:
+                    discounted_return = self.discounted_return(
+                                ep_reward, self.policy.gamma
+                            )
                     ep_buffer.append(
                         {
-                            "return": self.discounted_return(
-                                ep_reward, self.policy.gamma
-                            ),
+                            "return": discounted_return,
+                            "episode_length": t+1
                         }
                     )
 
                     break
 
         return_list = [ep_info["return"] for ep_info in ep_buffer]
+        episode_length_list = [ep_info["episode_length"] for ep_info in ep_buffer]
         return_mean, return_std = np.mean(return_list), np.std(return_list)
+        epi_len_mean, epi_len_std = np.mean(episode_length_list), np.std(episode_length_list)
 
         eval_dict = {
             f"eval/return_mean": return_mean,
             f"eval/return_std": return_std,
+            f"eval/epi_len_mean": epi_len_mean,
+            f"eval/epi_len_std": epi_len_std,
         }
 
         return eval_dict, image_array
 
+    def average_discounted_return(self, rewards, terminals, gamma):
+        """
+        Computes the average discounted return across all episodes, resetting at terminals.
+
+        Args:
+            rewards (list or np.array): Sequence of rewards.
+            terminals (list or np.array): Sequence of terminal flags (bool or 0/1).
+            gamma (float): Discount factor.
+
+        Returns:
+            float: Average episodic discounted return.
+        """
+        episode_returns = []
+        G = 0.0
+        for t in reversed(range(len(rewards))):
+            G = rewards[t] + gamma * G
+            if terminals[t]:
+                episode_returns.append(G)
+                G = 0.0  # reset for the next episode
+
+        if not episode_returns:
+            return 0.0
+        return sum(episode_returns) / len(episode_returns)
+
+
     def discounted_return(self, rewards, gamma):
         G = 0.0
         for i, r in enumerate(reversed(rewards)):
-            if np.isnan(r):
-                raise ValueError(
-                    f"NaN detected in rewards at position {len(rewards) - 1 - i}"
-                )
             G = float(r) + gamma * G
         return G
 
@@ -212,14 +245,14 @@ class Trainer:
 
             # save the best model
             if (
-                np.mean(self.last_return_mean) < self.last_min_return_mean
+                np.mean(self.last_return_mean) >= self.last_max_return_mean
                 and np.mean(self.last_return_std) <= self.last_min_return_std
             ):
                 name = f"best_model.pth"
                 path = os.path.join(self.logger.log_dir, name)
                 torch.save(model.state_dict(), path)
 
-                self.last_min_return_mean = np.mean(self.last_return_mean)
+                self.last_max_return_mean = np.mean(self.last_return_mean)
                 self.last_min_return_std = np.mean(self.last_return_std)
         else:
             raise ValueError("Error: Model is not identifiable!!!")

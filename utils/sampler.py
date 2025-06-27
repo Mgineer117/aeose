@@ -2,12 +2,12 @@ import random
 import time
 from datetime import date
 from math import ceil, floor
-
+from get_env import get_env
 import numpy as np
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
-
+from queue import Empty
 from utils.functions import temp_seed
 
 today = date.today()
@@ -88,11 +88,9 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
-        env,
         policy,
         seed: int | None = None,
         deterministic: bool = False,
-        random_init_pos: bool = False,
     ):
         """
         Collect samples in parallel using multiprocessing.
@@ -117,7 +115,7 @@ class OnlineSampler(Base):
         queue = mp.Manager().Queue()
         worker_memories = [None] * self.total_num_worker
         for i in range(self.total_num_worker):
-            args = (i, queue, env, policy, seed, deterministic)
+            args = (i, queue, policy, seed, deterministic)
             p = mp.Process(target=self.collect_trajectory, args=args)
             processes.append(p)
             p.start()
@@ -127,11 +125,11 @@ class OnlineSampler(Base):
         collected = 0
         while collected < expected:
             try:
-                pid, data = queue.get(timeout=120)
+                pid, data = queue.get(timeout=600)
                 if worker_memories[pid] is None:
                     worker_memories[pid] = data
                     collected += 1
-            except queue.Empty:
+            except Empty:
                 print(f"[Warning] Queue timeout. Retrying... ({collected}/{expected})")
 
         start_time = time.time()
@@ -164,7 +162,7 @@ class OnlineSampler(Base):
         return memory, t_end - t_start
 
     def collect_trajectory(
-        self, pid, queue, env, policy: nn.Module, seed: int, deterministic: bool = False
+        self, pid, queue, policy: nn.Module, seed: int, deterministic: bool = False
     ):
         # assign per-worker seed
         worker_seed = seed + pid
@@ -178,39 +176,41 @@ class OnlineSampler(Base):
         data = self.get_reset_data()  # allocate memory
 
         # env initialization
-        state, _ = env.reset(seed=seed)
-
+        env = get_env()
+        state, _ = env.reset(seed=seed)        
         for t in range(self.episode_len):
             with torch.no_grad():
                 a, metaData = policy(state, deterministic=deterministic)
                 a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
-                # env stepping
-                next_state, rew, term, trunc, infos = env.step(a)
-                done = term or trunc
+            # env stepping
+            next_state, rew, term, trunc, infos = env.step(np.argmax(a))
+            if t == self.episode_len - 1:
+                # safe truncation
+                trunc = True
+
+            done = term or trunc
 
             # saving the data
-            data["states"][current_step + t] = state
-            data["next_states"][current_step + t] = next_state
-            data["actions"][current_step + t] = a
-            data["rewards"][current_step + t] = rew
-            data["terminals"][current_step + t] = done
-            data["logprobs"][current_step + t] = (
+            data["states"][t] = state
+            data["next_states"][t] = next_state
+            data["actions"][t] = a
+            data["rewards"][t] = rew
+            data["terminals"][t] = done
+            data["logprobs"][t] = (
                 metaData["logprobs"].cpu().detach().numpy()
             )
-            data["entropys"][current_step + t] = (
+            data["entropys"][t] = (
                 metaData["entropy"].cpu().detach().numpy()
             )
 
-            if done:
-                # clear log
-                current_step += t + 1
-                break
-
             state = next_state
 
+            if done:
+                break
+
         for k in data:
-            data[k] = data[k][: self.episode_len]
+            data[k] = data[k][:t+1]
 
         if queue is not None:
             queue.put([pid, data])

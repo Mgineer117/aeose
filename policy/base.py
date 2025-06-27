@@ -1,5 +1,5 @@
 import os
-
+from sklearn.decomposition import PCA
 import numpy as np
 import torch
 import torch.nn as nn
@@ -7,16 +7,18 @@ import torch.nn.functional as F
 
 
 class Base(nn.Module):
-    def __init__(self):
+    def __init__(self, device):
         super(Base, self).__init__()
 
         self.dtype = torch.float32
-        self.device = torch.device("cpu")
+        self.device = device
 
         # utils
         self.l1_loss = F.l1_loss
         self.mse_loss = F.mse_loss
         self.huber_loss = F.smooth_l1_loss
+
+        self.state_visitation = None
 
     def print_parameter_devices(self, model):
         for name, param in model.named_parameters():
