@@ -9,6 +9,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 
+from get_env import get_env
 from utils.functions import temp_seed
 
 today = date.today()
@@ -87,7 +88,6 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
-        env,
         policy,
         seed: int | None = None,
         deterministic: bool = False,
@@ -119,7 +119,6 @@ class OnlineSampler(Base):
             args = (
                 i,
                 queue,
-                env,
                 policy,
                 seed,
                 deterministic,
@@ -172,7 +171,6 @@ class OnlineSampler(Base):
         self,
         pid,
         queue,
-        env,
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
@@ -187,6 +185,7 @@ class OnlineSampler(Base):
             torch.cuda.manual_seed_all(worker_seed)
 
         # estimate the batch size to hava a large batch
+        env = get_env()
         data = self.get_reset_data()  # allocate memory
 
         current_time = 0
@@ -201,7 +200,7 @@ class OnlineSampler(Base):
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
                     # env stepping
-                    next_state, rew, term, trunc, infos = env.step(a)
+                    next_state, rew, term, trunc, infos = env.step(np.argmax(a))
                     if t == self.episode_len - 1:
                         trunc = True  # force truncation at the end of episode
                     done = term or trunc

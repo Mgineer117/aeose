@@ -2,7 +2,7 @@ import os
 import time
 from collections import deque
 from copy import deepcopy
-from utils.rl import estimate_advantages
+
 import gymnasium as gym
 import numpy as np
 import torch
@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 from log.wandb_logger import WandbLogger
 from policy.base import Base
+from utils.rl import estimate_advantages
 from utils.sampler import OnlineSampler
 
 
@@ -71,7 +72,7 @@ class Trainer:
                 self.policy.train()
 
                 batch, sample_time = self.sampler.collect_samples(
-                    env=self.env, policy=self.policy, seed=self.seed
+                    policy=self.policy, seed=self.seed
                 )
                 loss_dict, timesteps, update_time = self.policy.learn(batch)
 
@@ -95,9 +96,11 @@ class Trainer:
                 loss_dict[f"{self.policy.name}/analytics/remaining_time (hr)"] = (
                     remaining_time / 3600
                 )  # Convert to hours
-                loss_dict[f"{self.policy.name}/analytics/discounted_return"] = self.average_discounted_return(batch["rewards"], batch["terminals"], self.policy.gamma)
-
-                
+                loss_dict[f"{self.policy.name}/analytics/discounted_return"] = (
+                    self.average_discounted_return(
+                        batch["rewards"], batch["terminals"], self.policy.gamma
+                    )
+                )
 
                 self.write_log(loss_dict, step=step)
 
@@ -158,13 +161,10 @@ class Trainer:
 
                 if done:
                     discounted_return = self.discounted_return(
-                                ep_reward, self.policy.gamma
-                            )
+                        ep_reward, self.policy.gamma
+                    )
                     ep_buffer.append(
-                        {
-                            "return": discounted_return,
-                            "episode_length": t+1
-                        }
+                        {"return": discounted_return, "episode_length": t + 1}
                     )
 
                     break
@@ -172,7 +172,9 @@ class Trainer:
         return_list = [ep_info["return"] for ep_info in ep_buffer]
         episode_length_list = [ep_info["episode_length"] for ep_info in ep_buffer]
         return_mean, return_std = np.mean(return_list), np.std(return_list)
-        epi_len_mean, epi_len_std = np.mean(episode_length_list), np.std(episode_length_list)
+        epi_len_mean, epi_len_std = np.mean(episode_length_list), np.std(
+            episode_length_list
+        )
 
         eval_dict = {
             f"eval/return_mean": return_mean,
@@ -206,7 +208,6 @@ class Trainer:
         if not episode_returns:
             return 0.0
         return sum(episode_returns) / len(episode_returns)
-
 
     def discounted_return(self, rewards, gamma):
         G = 0.0
