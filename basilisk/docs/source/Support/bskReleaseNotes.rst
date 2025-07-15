@@ -30,6 +30,7 @@ Version |release|
 - Support for ``opNavMode`` flag within vizSupport was removed, as its deprecation period ended
 - Demo video was added to :ref:`scenarioQuadMaps` documentation
 - Pinned python dependencies to avoid issues with new package versions.
+- Updated :ref:`vscmgStateEffector` documentation.
 - Added a new github workflow job ``canary`` to routinely check the compatibility of latest python dependencies with python 3.13 on the latest mac-os.
 - Deprecated :ref:`SpacecraftSystem`.  It was never completed and we have other ways to connect spacecraft components
 - Allow event conditions and effects to be defined by functions. This is preferred over the old string-based method, as it
@@ -50,6 +51,9 @@ Version |release|
 
     If you still want to use Visual Studio 16, then be sure to set the generator
     using ``python conanfile.py --generator "Visual Studio 16 2019``
+
+- Improve reading speed of recorded messages by about 75%.
+- Added support for Vizard 2.3.0
 
 
 Version 2.7.0 (April 20, 2025)

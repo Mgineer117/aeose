@@ -71,7 +71,7 @@ class Trainer:
                 self.policy.train()
 
                 batch, sample_time = self.sampler.collect_samples(
-                    policy=self.policy, seed=self.seed
+                    env=self.env, policy=self.policy, seed=self.seed
                 )
                 loss_dict, timesteps, update_time = self.policy.learn(batch)
 

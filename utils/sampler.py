@@ -2,12 +2,13 @@ import random
 import time
 from datetime import date
 from math import ceil, floor
-from get_env import get_env
+from queue import Empty
+
 import numpy as np
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
-from queue import Empty
+
 from utils.functions import temp_seed
 
 today = date.today()
@@ -22,7 +23,6 @@ class Base:
         self.action_dim = kwargs.get("action_dim")
         self.episode_len = kwargs.get("episode_len")
         self.batch_size = kwargs.get("batch_size")
-        self.batch_size_for_worker = kwargs.get("batch_size_for_worker")
 
     def get_reset_data(self):
         """
@@ -30,7 +30,7 @@ class Base:
         The remainder of zero arrays will be cut in the end.
         np.nan makes it easy to debug
         """
-        batch_size = self.batch_size_for_worker + self.episode_len
+        batch_size = 2 * self.episode_len
         data = dict(
             states=np.full(((batch_size,) + self.state_dim), np.nan, dtype=np.float32),
             next_states=np.full(
@@ -75,7 +75,6 @@ class OnlineSampler(Base):
             action_dim=action_dim,
             episode_len=episode_len,
             batch_size=batch_size,
-            batch_size_for_worker=episode_len,
         )
 
         self.total_num_worker = ceil(batch_size / episode_len)
@@ -88,9 +87,11 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
+        env,
         policy,
         seed: int | None = None,
         deterministic: bool = False,
+        random_init_pos: bool = False,
     ):
         """
         Collect samples in parallel using multiprocessing.
@@ -112,10 +113,18 @@ class OnlineSampler(Base):
         policy.to_device(torch.device("cpu"))
 
         processes = []
-        queue = mp.Manager().Queue()
+        queue = mp.Queue()
         worker_memories = [None] * self.total_num_worker
         for i in range(self.total_num_worker):
-            args = (i, queue, policy, seed, deterministic)
+            args = (
+                i,
+                queue,
+                env,
+                policy,
+                seed,
+                deterministic,
+                random_init_pos,
+            )
             p = mp.Process(target=self.collect_trajectory, args=args)
             processes.append(p)
             p.start()
@@ -125,7 +134,7 @@ class OnlineSampler(Base):
         collected = 0
         while collected < expected:
             try:
-                pid, data = queue.get(timeout=600)
+                pid, data = queue.get(timeout=300)
                 if worker_memories[pid] is None:
                     worker_memories[pid] = data
                     collected += 1
@@ -138,8 +147,6 @@ class OnlineSampler(Base):
             if p.is_alive():
                 p.terminate()
                 p.join()  # Force cleanup
-            # if p.exitcode != 0:
-            #     print(f"[Error] Process {p.pid} exited with code {p.exitcode}")
 
         # ✅ Merge memory
         memory = {}
@@ -152,9 +159,9 @@ class OnlineSampler(Base):
                 else:
                     memory[key] = wm[key]
 
-        # ✅ Truncate to desired batch size
-        for k in memory:
-            memory[k] = memory[k][: self.batch_size]
+        # # ✅ Truncate to desired batch size
+        # for k in memory:
+        #     memory[k] = memory[k][: self.batch_size]
 
         t_end = time.time()
         policy.to_device(device)
@@ -162,7 +169,14 @@ class OnlineSampler(Base):
         return memory, t_end - t_start
 
     def collect_trajectory(
-        self, pid, queue, policy: nn.Module, seed: int, deterministic: bool = False
+        self,
+        pid,
+        queue,
+        env,
+        policy: nn.Module,
+        seed: int,
+        deterministic: bool = False,
+        random_init_pos: bool = False,
     ):
         # assign per-worker seed
         worker_seed = seed + pid
@@ -175,42 +189,44 @@ class OnlineSampler(Base):
         # estimate the batch size to hava a large batch
         data = self.get_reset_data()  # allocate memory
 
-        # env initialization
-        env = get_env()
-        state, _ = env.reset(seed=seed)        
-        for t in range(self.episode_len):
-            with torch.no_grad():
-                a, metaData = policy(state, deterministic=deterministic)
-                a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
+        current_time = 0
+        while current_time < self.episode_len:
+            # env initialization
+            options = {"random_init_pos": random_init_pos}
+            state, _ = env.reset(seed=worker_seed, options=options)
 
-            # env stepping
-            next_state, rew, term, trunc, infos = env.step(np.argmax(a))
-            if t == self.episode_len - 1:
-                # safe truncation
-                trunc = True
+            for t in range(self.episode_len):
+                with torch.no_grad():
+                    a, metaData = policy(state, deterministic=deterministic)
+                    a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
-            done = term or trunc
+                    # env stepping
+                    next_state, rew, term, trunc, infos = env.step(a)
+                    if t == self.episode_len - 1:
+                        trunc = True  # force truncation at the end of episode
+                    done = term or trunc
 
-            # saving the data
-            data["states"][t] = state
-            data["next_states"][t] = next_state
-            data["actions"][t] = a
-            data["rewards"][t] = rew
-            data["terminals"][t] = done
-            data["logprobs"][t] = (
-                metaData["logprobs"].cpu().detach().numpy()
-            )
-            data["entropys"][t] = (
-                metaData["entropy"].cpu().detach().numpy()
-            )
+                # saving the data
+                data["states"][current_time + t] = state
+                data["next_states"][current_time + t] = next_state
+                data["actions"][current_time + t] = a
+                data["rewards"][current_time + t] = rew
+                data["terminals"][current_time + t] = done
+                data["logprobs"][current_time + t] = (
+                    metaData["logprobs"].cpu().detach().numpy()
+                )
+                data["entropys"][current_time + t] = (
+                    metaData["entropy"].cpu().detach().numpy()
+                )
 
-            state = next_state
+                if done:
+                    current_time += t + 1
+                    break
 
-            if done:
-                break
+                state = next_state
 
         for k in data:
-            data[k] = data[k][:t+1]
+            data[k] = data[k][:current_time]
 
         if queue is not None:
             queue.put([pid, data])
