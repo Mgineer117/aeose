@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=aeose
 #SBATCH --account=huytran1-ic
-#SBATCH --partition=eng.research-gpu
+#SBATCH --partition=eng-research-gpu
 #SBATCH --nodes=1
 #SBATCH --ntasks=8
 #SBATCH --cpus-per-task=8
