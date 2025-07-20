@@ -24,10 +24,10 @@ CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 32 32 32 &
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 64 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 128 128 128 & 
 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 16 16 16 16 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 32 32 32 32 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 64 64 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 128 128 128 128 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 16 16 16 16 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 32 32 32 32 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 64 64 64 64 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 128 128 128 128 & 
 
 
 # === Wait for all background jobs to finish ===
