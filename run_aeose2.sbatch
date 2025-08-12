@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=aeose
 #SBATCH --account=huytran1-ic
-#SBATCH --partition=eng-research-gpu
+#SBATCH --partition=IllinoisComputes-GPU
 #SBATCH --nodes=1
 #SBATCH --ntasks=8
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:2
-#SBATCH --time=2-00:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --output=aeose.o%j
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=minjae5@illinois.edu
