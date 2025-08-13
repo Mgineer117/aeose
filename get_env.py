@@ -217,7 +217,7 @@ def get_env():
         time_limit=duration,
         failure_penalty=-1.0,
         terminate_on_time_limit=True,
-        log_level="INFO",
+        log_level="ERROR",
     )
 
     env = SatelliteTasking(**env_args)
