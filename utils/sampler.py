@@ -131,14 +131,28 @@ class OnlineSampler(Base):
         # ✅ Wait for just the subprocess workers of this round
         expected = len(processes)
         collected = 0
+        retry_counts = {pid: 0 for pid in range(expected)}
+        max_retries = 2
         while collected < expected:
             try:
                 pid, data = queue.get(timeout=300)
                 if worker_memories[pid] is None:
                     worker_memories[pid] = data
                     collected += 1
+                    retry_counts[pid] = 0  # reset retry count
             except Empty:
                 print(f"[Warning] Queue timeout. Retrying... ({collected}/{expected})")
+                # Find which workers are still missing
+                missing = [
+                    pid for pid in range(expected) if worker_memories[pid] is None
+                ]
+                for pid in missing:
+                    retry_counts[pid] += 1
+                    # Mark worker as failed if too many retries
+                    if retry_counts[pid] >= max_retries:
+                        print(f"[Error] Worker {pid} did not respond. Skipping.")
+                        worker_memories[pid] = []  # or None, depending on your handling
+                        collected += 1  # count it as "done" so loop can exit
 
         start_time = time.time()
         for p in processes:
