@@ -151,7 +151,9 @@ class OnlineSampler(Base):
                     # Mark worker as failed if too many retries
                     if retry_counts[pid] >= max_retries:
                         print(f"[Error] Worker {pid} did not respond. Skipping.")
-                        worker_memories[pid] = []  # or None, depending on your handling
+                        worker_memories[pid] = (
+                            None  # or None, depending on your handling
+                        )
                         collected += 1  # count it as "done" so loop can exit
 
         start_time = time.time()
@@ -164,13 +166,12 @@ class OnlineSampler(Base):
         # ✅ Merge memory
         memory = {}
         for wm in worker_memories:
-            if wm is None:
-                raise RuntimeError("One or more workers failed to return data.")
-            for key, val in wm.items():
-                if key in memory:
-                    memory[key] = np.concatenate((memory[key], wm[key]), axis=0)
-                else:
-                    memory[key] = wm[key]
+            if wm is not None:
+                for key, val in wm.items():
+                    if key in memory:
+                        memory[key] = np.concatenate((memory[key], wm[key]), axis=0)
+                    else:
+                        memory[key] = wm[key]
 
         # # ✅ Truncate to desired batch size
         # for k in memory:
