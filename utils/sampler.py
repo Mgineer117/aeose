@@ -92,16 +92,17 @@ class OnlineSampler(Base):
         seed: int | None = None,
         deterministic: bool = False,
         random_init_pos: bool = False,
+        use_mp: bool = False,
     ):
         """
-        Collect samples in parallel using multiprocessing.
+        Collect samples either in parallel (multiprocessing) or sequentially.
 
         Args:
-            env: The environment to interact with.
             policy: Policy to sample actions from.
             seed (int | None): Seed for reproducibility.
             deterministic (bool): Whether to use deterministic policy.
             random_init_pos (bool): Randomize initial position in env reset.
+            use_mp (bool): If True, use multiprocessing. If False, run sequentially.
 
         Returns:
             memory (dict): Sampled batch.
@@ -109,77 +110,91 @@ class OnlineSampler(Base):
         """
         t_start = time.time()
         device = next((p.device for p in policy.parameters()), torch.device("cpu"))
-
         policy.to_device(torch.device("cpu"))
 
-        processes = []
-        queue = mp.Queue()
-        worker_memories = [None] * self.total_num_worker
-        for i in range(self.total_num_worker):
-            args = (
-                i,
-                queue,
-                policy,
-                seed,
-                deterministic,
-                random_init_pos,
-            )
-            p = mp.Process(target=self.collect_trajectory, args=args)
-            processes.append(p)
-            p.start()
-
-        # ✅ Wait for just the subprocess workers of this round
-        expected = len(processes)
-        collected = 0
-        retry_counts = {pid: 0 for pid in range(expected)}
-        max_retries = 2
-        while collected < expected:
-            try:
-                pid, data = queue.get(timeout=300)
-                if worker_memories[pid] is None:
-                    worker_memories[pid] = data
-                    collected += 1
-                    retry_counts[pid] = 0  # reset retry count
-            except Empty:
-                print(f"[Warning] Queue timeout. Retrying... ({collected}/{expected})")
-                # Find which workers are still missing
-                missing = [
-                    pid for pid in range(expected) if worker_memories[pid] is None
-                ]
-                for pid in missing:
-                    retry_counts[pid] += 1
-                    # Mark worker as failed if too many retries
-                    if retry_counts[pid] >= max_retries:
-                        print(f"[Error] Worker {pid} did not respond. Skipping.")
-                        worker_memories[pid] = (
-                            None  # or None, depending on your handling
-                        )
-                        collected += 1  # count it as "done" so loop can exit
-
-        start_time = time.time()
-        for p in processes:
-            p.join(timeout=max(0.1, 10 - (time.time() - start_time)))
-            if p.is_alive():
-                p.terminate()
-                p.join()  # Force cleanup
-
-        # ✅ Merge memory
         memory = {}
-        for wm in worker_memories:
-            if wm is not None:
-                for key, val in wm.items():
-                    if key in memory:
-                        memory[key] = np.concatenate((memory[key], wm[key]), axis=0)
-                    else:
-                        memory[key] = wm[key]
 
-        # # ✅ Truncate to desired batch size
-        # for k in memory:
-        #     memory[k] = memory[k][: self.batch_size]
+        if use_mp:
+            # === Multiprocessing path ===
+            processes = []
+            queue = mp.Queue()
+            worker_memories = [None] * self.total_num_worker
+
+            for i in range(self.total_num_worker):
+                args = (
+                    i,
+                    queue,
+                    policy,
+                    seed,
+                    deterministic,
+                    random_init_pos,
+                )
+                p = mp.Process(target=self.collect_trajectory, args=args)
+                processes.append(p)
+                p.start()
+
+            # ✅ Wait for just the subprocess workers of this round
+            expected = len(processes)
+            collected = 0
+            retry_counts = {pid: 0 for pid in range(expected)}
+            max_retries = 2
+            while collected < expected:
+                try:
+                    pid, data = queue.get(timeout=300)
+                    if worker_memories[pid] is None:
+                        worker_memories[pid] = data
+                        collected += 1
+                        retry_counts[pid] = 0  # reset retry count
+                except Empty:
+                    print(
+                        f"[Warning] Queue timeout. Retrying... ({collected}/{expected})"
+                    )
+                    missing = [
+                        pid for pid in range(expected) if worker_memories[pid] is None
+                    ]
+                    for pid in missing:
+                        retry_counts[pid] += 1
+                        if retry_counts[pid] >= max_retries:
+                            print(f"[Error] Worker {pid} did not respond. Skipping.")
+                            worker_memories[pid] = None
+                            collected += 1
+
+            # ✅ Cleanup processes
+            start_time = time.time()
+            for p in processes:
+                p.join(timeout=max(0.1, 10 - (time.time() - start_time)))
+                if p.is_alive():
+                    p.terminate()
+                    p.join()
+
+            # ✅ Merge memory from workers
+            for wm in worker_memories:
+                if wm is not None:
+                    for key, val in wm.items():
+                        if key in memory:
+                            memory[key] = np.concatenate((memory[key], val), axis=0)
+                        else:
+                            memory[key] = val
+
+        else:
+            # === Single-process path ===
+            worker_memories = []
+            for i in range(self.total_num_worker):
+                wm = self.collect_trajectory(
+                    i, None, policy, seed, deterministic, random_init_pos
+                )
+                worker_memories.append(wm)
+
+            for wm in worker_memories:
+                if wm is not None:
+                    for key, val in wm.items():
+                        if key in memory:
+                            memory[key] = np.concatenate((memory[key], val), axis=0)
+                        else:
+                            memory[key] = val
 
         t_end = time.time()
         policy.to_device(device)
-
         return memory, t_end - t_start
 
     def collect_trajectory(
