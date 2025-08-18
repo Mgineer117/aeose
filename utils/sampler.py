@@ -88,11 +88,12 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
+        env,
         policy,
         seed: int | None = None,
         deterministic: bool = False,
         random_init_pos: bool = False,
-        use_mp: bool = False,
+        use_mp: bool = True,
     ):
         """
         Collect samples either in parallel (multiprocessing) or sequentially.
@@ -122,6 +123,7 @@ class OnlineSampler(Base):
 
             for i in range(self.total_num_worker):
                 args = (
+                    env,
                     i,
                     queue,
                     policy,
@@ -181,7 +183,7 @@ class OnlineSampler(Base):
             worker_memories = []
             for i in range(self.total_num_worker):
                 wm = self.collect_trajectory(
-                    i, None, policy, seed, deterministic, random_init_pos
+                    env, i, None, policy, seed, deterministic, random_init_pos
                 )
                 worker_memories.append(wm)
 
@@ -199,6 +201,7 @@ class OnlineSampler(Base):
 
     def collect_trajectory(
         self,
+        env,
         pid,
         queue,
         policy: nn.Module,
@@ -215,7 +218,7 @@ class OnlineSampler(Base):
             torch.cuda.manual_seed_all(worker_seed)
 
         # estimate the batch size to hava a large batch
-        env = get_env()
+        # env = get_env()
         data = self.get_reset_data()  # allocate memory
 
         current_time = 0
