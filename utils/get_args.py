@@ -54,7 +54,7 @@ def get_args():
         "--eval-num", type=int, default=1, help="Number of training epochs."
     )
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
-    parser.add_argument("--minibatch-size", type=int, default=1024, help="")
+    parser.add_argument("--minibatch-size", type=int, default=2048, help="")
     parser.add_argument("--batch-size", type=int, default=128, help="")
     parser.add_argument("--K-epochs", type=int, default=10, help="")
     parser.add_argument(
