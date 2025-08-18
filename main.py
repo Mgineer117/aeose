@@ -18,10 +18,9 @@ def run(args, seed, unique_id, exp_time):
 
     # get env
     env = get_env()
-    env.max_steps = 200
+    env.max_steps = 1000
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
-    print(args.state_dim, args.action_dim)
     args.episode_len = env.max_steps
     args.is_discrete = env.action_space.__class__.__name__ == "Discrete"
 

@@ -9,76 +9,6 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
 
-def satellite_generator(observation, n_ahead=32, include_time=False):
-    """_summary_
-
-    Args:
-        observation: Pick from "S1", "S2", "S3"
-        n_ahead: Number of requests to include in the observation and action spaces
-        include_time: Whether to include time through episode in the observation
-    """
-
-    assert observation in ["S1", "S2", "S3"]
-
-    class CustomSatellite(sats.ImagingSatellite):
-        action_spec = [act.Image(n_ahead_image=n_ahead)]
-        if observation == "S1":
-            observation_spec = [
-                obs.SatProperties(
-                    dict(prop="omega_BP_P", norm=0.03),
-                    dict(prop="c_hat_P"),
-                    dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
-                    dict(prop="v_BN_P", norm=7616.5),
-                ),
-                obs.OpportunityProperties(
-                    dict(prop="priority"),
-                    dict(prop="r_LP_P", norm=orbitalMotion.REQ_EARTH * 1e3),
-                    type="target",
-                    n_ahead_observe=n_ahead,
-                ),
-            ]
-        elif observation == "S2":
-            observation_spec = [
-                obs.SatProperties(
-                    dict(prop="omega_BH_H", norm=0.03),
-                    dict(prop="c_hat_H"),
-                    dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
-                    dict(prop="v_BN_P", norm=7616.5),
-                ),
-                obs.OpportunityProperties(
-                    dict(prop="priority"),
-                    dict(prop="r_LB_H", norm=orbitalMotion.REQ_EARTH * 1e3),
-                    type="target",
-                    n_ahead_observe=n_ahead,
-                ),
-            ]
-        elif observation == "S3":
-            observation_spec = [
-                obs.SatProperties(
-                    dict(prop="omega_BH_H", norm=0.03),
-                    dict(prop="c_hat_H"),
-                    dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
-                    dict(prop="v_BN_P", norm=7616.5),
-                ),
-                obs.OpportunityProperties(
-                    dict(prop="priority"),
-                    dict(prop="r_LB_H", norm=800 * 1e3),
-                    dict(prop="target_angle", norm=np.pi / 2),
-                    dict(prop="target_angle_rate", norm=0.03),
-                    dict(prop="opportunity_open", norm=300.0),
-                    dict(prop="opportunity_close", norm=300.0),
-                    type="target",
-                    n_ahead_observe=n_ahead,
-                ),
-            ]
-
-        if include_time:
-            observation_spec.append(obs.Time())
-        fsw_type = fsw.SteeringImagerFSWModel
-
-    return CustomSatellite
-
-
 class Density(obs.Observation):
     def __init__(
         self,
@@ -205,21 +135,36 @@ elif target_distribution == "cities":
 
 
 def get_env():
-    env_args = dict(
+    # env_args = dict(
+    #     satellite=power_sat_generator(n_ahead=32, include_time=False)(
+    #         name="EO1-power",
+    #         sat_args=SAT_ARGS_POWER,
+    #     ),
+    #     scenario=targets,
+    #     rewarder=data.UniqueImageReward(),
+    #     sim_rate=1.0,
+    #     max_step_duration=300.0,
+    #     time_limit=duration,
+    #     failure_penalty=-1.0,
+    #     terminate_on_time_limit=True,
+    #     log_level="ERROR",
+    # )
+
+    # env = SatelliteTasking(**env_args)
+
+    env = SatelliteTasking(
         satellite=power_sat_generator(n_ahead=32, include_time=False)(
             name="EO1-power",
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
         rewarder=data.UniqueImageReward(),
-        sim_rate=1.0,
+        sim_rate=0.5,
         max_step_duration=300.0,
         time_limit=duration,
-        failure_penalty=-1.0,
+        failure_penalty=0.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
     )
-
-    env = SatelliteTasking(**env_args)
 
     return env
