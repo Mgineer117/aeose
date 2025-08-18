@@ -183,7 +183,7 @@ class OnlineSampler(Base):
             worker_memories = []
             for i in range(self.total_num_worker):
                 wm = self.collect_trajectory(
-                    env, i, None, policy, seed, deterministic, random_init_pos
+                    i, None, policy, seed, deterministic, random_init_pos
                 )
                 worker_memories.append(wm)
 
