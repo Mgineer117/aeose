@@ -80,9 +80,6 @@ class PPO_Learner(Base):
         self.train()
         t0 = time.time()
 
-        if not "states" in batch:
-            return {}, 0, 0
-
         # Ingredients: Convert batch data to tensors
         states = self.preprocess_state(batch["states"])
         actions = self.preprocess_state(batch["actions"])

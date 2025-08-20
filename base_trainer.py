@@ -74,57 +74,60 @@ class Trainer:
                 batch, sample_time = self.sampler.collect_samples(
                     env=self.env, policy=self.policy, seed=self.seed
                 )
-                loss_dict, timesteps, update_time = self.policy.learn(batch)
+                if "states" in batch:
+                    loss_dict, timesteps, update_time = self.policy.learn(batch)
 
-                # Calculate expected remaining time
-                pbar.update(timesteps)
+                    # Calculate expected remaining time
+                    pbar.update(timesteps)
 
-                elapsed_time = time.time() - start_time
-                avg_time_per_iter = elapsed_time / step
-                remaining_time = avg_time_per_iter * (self.timesteps - step)
+                    elapsed_time = time.time() - start_time
+                    avg_time_per_iter = elapsed_time / step
+                    remaining_time = avg_time_per_iter * (self.timesteps - step)
 
-                total_clock_time += sample_time
-                total_clock_time += update_time
+                    total_clock_time += sample_time
+                    total_clock_time += update_time
 
-                # Update environment steps and calculate time metrics
-                loss_dict[f"{self.policy.name}/analytics/timesteps"] = step + timesteps
-                loss_dict[f"{self.policy.name}/analytics/total_clock_time (s)"] = (
-                    total_clock_time
-                )
-                loss_dict[f"{self.policy.name}/analytics/sample_time"] = sample_time
-                loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
-                loss_dict[f"{self.policy.name}/analytics/remaining_time (hr)"] = (
-                    remaining_time / 3600
-                )  # Convert to hours
-                loss_dict[f"{self.policy.name}/analytics/discounted_return"] = (
-                    self.average_discounted_return(
-                        batch["rewards"], batch["terminals"], self.policy.gamma
+                    # Update environment steps and calculate time metrics
+                    loss_dict[f"{self.policy.name}/analytics/timesteps"] = (
+                        step + timesteps
                     )
-                )
-
-                self.write_log(loss_dict, step=step)
-
-                #### EVALUATIONS ####
-                if step >= self.eval_interval * eval_idx:
-                    ### Eval Loop
-                    self.policy.eval()
-                    eval_idx += 1
-
-                    eval_dict, running_video = self.evaluate()
-
-                    # Manual logging
-                    self.write_log(eval_dict, step=step, eval_log=True)
-                    self.write_video(
-                        running_video,
-                        step=step,
-                        logdir=f"videos",
-                        name="running_video",
+                    loss_dict[f"{self.policy.name}/analytics/total_clock_time (s)"] = (
+                        total_clock_time
+                    )
+                    loss_dict[f"{self.policy.name}/analytics/sample_time"] = sample_time
+                    loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
+                    loss_dict[f"{self.policy.name}/analytics/remaining_time (hr)"] = (
+                        remaining_time / 3600
+                    )  # Convert to hours
+                    loss_dict[f"{self.policy.name}/analytics/discounted_return"] = (
+                        self.average_discounted_return(
+                            batch["rewards"], batch["terminals"], self.policy.gamma
+                        )
                     )
 
-                    self.last_return_mean.append(eval_dict[f"eval/return_mean"])
-                    self.last_return_std.append(eval_dict[f"eval/return_std"])
+                    self.write_log(loss_dict, step=step)
 
-                    self.save_model(step)
+                    #### EVALUATIONS ####
+                    if step >= self.eval_interval * eval_idx:
+                        ### Eval Loop
+                        self.policy.eval()
+                        eval_idx += 1
+
+                        eval_dict, running_video = self.evaluate()
+
+                        # Manual logging
+                        self.write_log(eval_dict, step=step, eval_log=True)
+                        self.write_video(
+                            running_video,
+                            step=step,
+                            logdir=f"videos",
+                            name="running_video",
+                        )
+
+                        self.last_return_mean.append(eval_dict[f"eval/return_mean"])
+                        self.last_return_std.append(eval_dict[f"eval/return_std"])
+
+                        self.save_model(step)
 
                 torch.cuda.empty_cache()
 
