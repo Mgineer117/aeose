@@ -252,6 +252,8 @@ class OnlineSampler(Base):
 
             state = next_state
 
+        self.envs[pid].close()
+
         for k in data:
             data[k] = data[k][:current_time]
 
