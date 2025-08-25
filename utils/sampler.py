@@ -224,9 +224,9 @@ class OnlineSampler(Base):
                 # env stepping
                 next_state, rew, term, trunc, infos = self.envs[pid].step(np.argmax(a))
 
-                print(
-                    f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew:.2f}, terminal: {term}, trunc: {trunc}"
-                )
+                # print(
+                #     f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew:.2f}, terminal: {term}, trunc: {trunc}"
+                # )
 
                 if t == self.episode_len - 1:
                     trunc = True  # force truncation at the end of episode
