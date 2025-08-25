@@ -92,7 +92,6 @@ class OnlineSampler(Base):
         policy,
         seed: int | None = None,
         deterministic: bool = False,
-        random_init_pos: bool = False,
         use_mp: bool = True,
     ):
         """
@@ -123,15 +122,7 @@ class OnlineSampler(Base):
             worker_memories = [None] * self.total_num_worker
 
             for i in range(self.total_num_worker):
-                args = (
-                    i,
-                    queue,
-                    barrier,
-                    policy,
-                    seed,
-                    deterministic,
-                    random_init_pos,
-                )
+                args = (i, queue, barrier, policy, seed, deterministic)
                 p = mp.Process(target=self.collect_trajectory, args=args)
                 processes.append(p)
                 p.start()
@@ -183,9 +174,7 @@ class OnlineSampler(Base):
             # === Single-process path ===
             worker_memories = []
             for i in range(self.total_num_worker):
-                wm = self.collect_trajectory(
-                    i, None, policy, seed, deterministic, random_init_pos
-                )
+                wm = self.collect_trajectory(i, None, policy, seed, deterministic)
                 worker_memories.append(wm)
 
             for wm in worker_memories:
@@ -208,7 +197,6 @@ class OnlineSampler(Base):
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
-        random_init_pos: bool = False,
     ):
         # assign per-worker seed
         worker_seed = seed + pid
@@ -224,8 +212,7 @@ class OnlineSampler(Base):
         current_time = 0
 
         # env initialization
-        options = {"random_init_pos": random_init_pos}
-        state, _ = self.envs[pid].reset(seed=worker_seed, options=options)
+        state, _ = self.envs[pid].reset(seed=worker_seed)
 
         for t in range(self.episode_len):
             with torch.no_grad():
@@ -235,7 +222,9 @@ class OnlineSampler(Base):
             # env stepping
             next_state, rew, term, trunc, infos = self.envs[pid].step(np.argmax(a))
 
-            print(f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew}")
+            print(
+                f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew}, terminal: {term}, trunc: {trunc}"
+            )
 
             barrier.wait()
 
