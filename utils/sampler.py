@@ -237,7 +237,7 @@ class OnlineSampler(Base):
                         np.argmax(a)
                     )
 
-                    print(pid, t, rew)
+                    print(f"pid: {pid}, t/T: {t/self.episode_len}, rew: {rew}")
 
                     barrier.wait()
 
