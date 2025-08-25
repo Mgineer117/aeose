@@ -48,7 +48,6 @@ def run(args, seed, unique_id, exp_time):
 
 if __name__ == "__main__":
     torch.set_default_dtype(torch.float32)
-    mp.set_start_method("spawn")
 
     init_args = get_args()
     unique_id = str(uuid.uuid4())[:4]
