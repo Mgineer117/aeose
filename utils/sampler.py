@@ -222,47 +222,45 @@ class OnlineSampler(Base):
         data = self.get_reset_data()  # allocate memory
 
         current_time = 0
-        while current_time < self.episode_len:
-            # env initialization
-            options = {"random_init_pos": random_init_pos}
-            state, _ = self.envs[pid].reset(seed=worker_seed, options=options)
 
-            for t in range(self.episode_len):
-                with torch.no_grad():
-                    a, metaData = policy(state, deterministic=deterministic)
-                    a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
+        # env initialization
+        options = {"random_init_pos": random_init_pos}
+        state, _ = self.envs[pid].reset(seed=worker_seed, options=options)
 
-                    # env stepping
-                    next_state, rew, term, trunc, infos = self.envs[pid].step(
-                        np.argmax(a)
-                    )
+        for t in range(self.episode_len):
+            with torch.no_grad():
+                a, metaData = policy(state, deterministic=deterministic)
+                a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
-                    print(f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew}")
+            # env stepping
+            next_state, rew, term, trunc, infos = self.envs[pid].step(np.argmax(a))
 
-                    barrier.wait()
+            print(f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew}")
 
-                    if t == self.episode_len - 1:
-                        trunc = True  # force truncation at the end of episode
-                    done = term or trunc
+            barrier.wait()
 
-                # saving the data
-                data["states"][current_time + t] = state
-                data["next_states"][current_time + t] = next_state
-                data["actions"][current_time + t] = a
-                data["rewards"][current_time + t] = rew
-                data["terminals"][current_time + t] = done
-                data["logprobs"][current_time + t] = (
-                    metaData["logprobs"].cpu().detach().numpy()
-                )
-                data["entropys"][current_time + t] = (
-                    metaData["entropy"].cpu().detach().numpy()
-                )
+            if t == self.episode_len - 1:
+                trunc = True  # force truncation at the end of episode
+            done = term or trunc
 
-                if done:
-                    current_time += t + 1
-                    break
+            # saving the data
+            data["states"][current_time + t] = state
+            data["next_states"][current_time + t] = next_state
+            data["actions"][current_time + t] = a
+            data["rewards"][current_time + t] = rew
+            data["terminals"][current_time + t] = done
+            data["logprobs"][current_time + t] = (
+                metaData["logprobs"].cpu().detach().numpy()
+            )
+            data["entropys"][current_time + t] = (
+                metaData["entropy"].cpu().detach().numpy()
+            )
 
-                state = next_state
+            if done:
+                current_time += t + 1
+                break
+
+            state = next_state
 
         for k in data:
             data[k] = data[k][:current_time]
