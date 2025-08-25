@@ -90,6 +90,10 @@ class OnlineSampler(Base):
         self,
         env,
         policy,
+        seed: int | None = None,
+        deterministic: bool = False,
+        random_init_pos: bool = False,
+        use_mp: bool = False,
     ):
         """
         Collect samples either in parallel (multiprocessing) or sequentially.
@@ -109,47 +113,91 @@ class OnlineSampler(Base):
         device = next((p.device for p in policy.parameters()), torch.device("cpu"))
         policy.to_device(torch.device("cpu"))
 
-        states, _ = self.envs.reset()
-        print(states.shape)
+        memory = {}
 
-        for t in range(self.episode_len):
-            with torch.no_grad():
-                actions, metaData = policy(states, deterministic=False)
-                actions = (
-                    actions.cpu().numpy().squeeze(0)
-                    if actions.shape[-1] > 1
-                    else [actions.item()]
+        if use_mp:
+            # === Multiprocessing path ===
+            processes = []
+            queue = mp.Queue()
+            worker_memories = [None] * self.total_num_worker
+
+            for i in range(self.total_num_worker):
+                args = (
+                    env,
+                    i,
+                    queue,
+                    policy,
+                    seed,
+                    deterministic,
+                    random_init_pos,
                 )
+                p = mp.Process(target=self.collect_trajectory, args=args)
+                processes.append(p)
+                p.start()
 
-            # env stepping
-            next_states, rews, terms, truncs, infos = self.envs.step(np.argmax(actions))
-            if t == self.episode_len - 1:
-                truncs = True  # force truncation at the end of episode
-            dones = terms or truncs
+            # ✅ Wait for just the subprocess workers of this round
+            expected = len(processes)
+            collected = 0
+            retry_counts = {pid: 0 for pid in range(expected)}
+            max_retries = 2
+            while collected < expected:
+                try:
+                    pid, data = queue.get(timeout=300)
+                    if worker_memories[pid] is None:
+                        worker_memories[pid] = data
+                        collected += 1
+                        retry_counts[pid] = 0  # reset retry count
+                except Empty:
+                    print(
+                        f"[Warning] Queue timeout. Retrying... ({collected}/{expected})"
+                    )
+                    missing = [
+                        pid for pid in range(expected) if worker_memories[pid] is None
+                    ]
+                    for pid in missing:
+                        retry_counts[pid] += 1
+                        if retry_counts[pid] >= max_retries:
+                            print(f"[Error] Worker {pid} did not respond. Skipping.")
+                            worker_memories[pid] = None
+                            collected += 1
 
-            # # saving the data
-            # data["states"][current_time + t] = states
-            # data["next_states"][current_time + t] = next_states
-            # data["actions"][current_time + t] = actions
-            # data["rewards"][current_time + t] = rews
-            # data["terminals"][current_time + t] = dones
-            # data["logprobs"][current_time + t] = (
-            #     metaData["logprobs"].cpu().detach().numpy()
-            # )
-            # data["entropys"][current_time + t] = (
-            #     metaData["entropy"].cpu().detach().numpy()
-            # )
+            # ✅ Cleanup processes
+            start_time = time.time()
+            for p in processes:
+                p.join(timeout=max(0.1, 10 - (time.time() - start_time)))
+                if p.is_alive():
+                    p.terminate()
+                    p.join()
 
-            # if done:
-            #     current_time += t + 1
-            #     break
+            # ✅ Merge memory from workers
+            for wm in worker_memories:
+                if wm is not None:
+                    for key, val in wm.items():
+                        if key in memory:
+                            memory[key] = np.concatenate((memory[key], val), axis=0)
+                        else:
+                            memory[key] = val
 
-            states = next_states
+        else:
+            # === Single-process path ===
+            worker_memories = []
+            for i in range(self.total_num_worker):
+                wm = self.collect_trajectory(
+                    env, i, None, policy, seed, deterministic, random_init_pos
+                )
+                worker_memories.append(wm)
+
+            for wm in worker_memories:
+                if wm is not None:
+                    for key, val in wm.items():
+                        if key in memory:
+                            memory[key] = np.concatenate((memory[key], val), axis=0)
+                        else:
+                            memory[key] = val
 
         t_end = time.time()
         policy.to_device(device)
-        return 0
-        # return memory, t_end - t_start
+        return memory, t_end - t_start
 
     def collect_trajectory(
         self,
