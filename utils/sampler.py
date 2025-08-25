@@ -119,12 +119,14 @@ class OnlineSampler(Base):
             # === Multiprocessing path ===
             processes = []
             queue = mp.Queue()
+            barrier = mp.Barrier(self.total_num_worker)
             worker_memories = [None] * self.total_num_worker
 
             for i in range(self.total_num_worker):
                 args = (
                     i,
                     queue,
+                    barrier,
                     policy,
                     seed,
                     deterministic,
@@ -202,6 +204,7 @@ class OnlineSampler(Base):
         self,
         pid,
         queue,
+        barrier,
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
@@ -233,6 +236,9 @@ class OnlineSampler(Base):
                     next_state, rew, term, trunc, infos = self.envs[pid].step(
                         np.argmax(a)
                     )
+
+                    barrier.wait()
+
                     if t == self.episode_len - 1:
                         trunc = True  # force truncation at the end of episode
                     done = term or trunc
