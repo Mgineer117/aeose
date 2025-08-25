@@ -190,7 +190,7 @@ class PPO_Learner(Base):
         del states, actions, rewards, terminals, old_logprobs
         self.eval()
 
-        timesteps = self.num_minibatch * self.minibatch_size
+        timesteps = states.shape[0]
         update_time = time.time() - t0
 
         return loss_dict, timesteps, update_time
