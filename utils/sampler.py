@@ -79,7 +79,6 @@ class OnlineSampler(Base):
         )
 
         self.total_num_worker = ceil(batch_size / episode_len)
-        self.envs = [get_env() for _ in range(self.total_num_worker)]
 
         if verbose:
             print("Sampling Parameters:")
@@ -117,6 +116,7 @@ class OnlineSampler(Base):
         if use_mp:
             # === Multiprocessing path ===
             processes = []
+            self.envs = [get_env() for _ in range(self.total_num_worker)]
             queue = mp.Queue()
             barrier = mp.Barrier(self.total_num_worker)
             worker_memories = [None] * self.total_num_worker
