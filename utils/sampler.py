@@ -11,7 +11,6 @@ import torch.nn as nn
 
 from get_env import get_env
 from utils.functions import temp_seed
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 today = date.today()
 
@@ -79,11 +78,6 @@ class OnlineSampler(Base):
             batch_size=batch_size,
         )
 
-        num_envs = 8
-        self.envs = SubprocVecEnv(
-            [get_env() for i in range(num_envs)]
-        )  # uses spawn internally
-
         self.total_num_worker = ceil(batch_size / episode_len)
 
         if verbose:
@@ -94,6 +88,7 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
+        env,
         policy,
     ):
         """
