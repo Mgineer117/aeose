@@ -79,6 +79,7 @@ class OnlineSampler(Base):
         )
 
         self.total_num_worker = ceil(batch_size / episode_len)
+        self.envs = [get_env() for _ in range(self.total_num_worker)]
 
         if verbose:
             print("Sampling Parameters:")
@@ -88,7 +89,6 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
-        env,
         policy,
         seed: int | None = None,
         deterministic: bool = False,
@@ -123,7 +123,6 @@ class OnlineSampler(Base):
 
             for i in range(self.total_num_worker):
                 args = (
-                    env,
                     i,
                     queue,
                     policy,
@@ -183,7 +182,7 @@ class OnlineSampler(Base):
             worker_memories = []
             for i in range(self.total_num_worker):
                 wm = self.collect_trajectory(
-                    env, i, None, policy, seed, deterministic, random_init_pos
+                    i, None, policy, seed, deterministic, random_init_pos
                 )
                 worker_memories.append(wm)
 
@@ -201,7 +200,6 @@ class OnlineSampler(Base):
 
     def collect_trajectory(
         self,
-        env,
         pid,
         queue,
         policy: nn.Module,
@@ -218,14 +216,13 @@ class OnlineSampler(Base):
             torch.cuda.manual_seed_all(worker_seed)
 
         # estimate the batch size to hava a large batch
-        # env = get_env()
         data = self.get_reset_data()  # allocate memory
 
         current_time = 0
         while current_time < self.episode_len:
             # env initialization
             options = {"random_init_pos": random_init_pos}
-            state, _ = env.reset(seed=worker_seed, options=options)
+            state, _ = self.envs[pid].reset(seed=worker_seed, options=options)
 
             for t in range(self.episode_len):
                 with torch.no_grad():
@@ -233,7 +230,9 @@ class OnlineSampler(Base):
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
                     # env stepping
-                    next_state, rew, term, trunc, infos = env.step(np.argmax(a))
+                    next_state, rew, term, trunc, infos = self.envs[pid].step(
+                        np.argmax(a)
+                    )
                     if t == self.episode_len - 1:
                         trunc = True  # force truncation at the end of episode
                     done = term or trunc
