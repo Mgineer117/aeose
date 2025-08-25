@@ -93,7 +93,7 @@ class OnlineSampler(Base):
         seed: int | None = None,
         deterministic: bool = False,
         random_init_pos: bool = False,
-        use_mp: bool = False,
+        use_mp: bool = True,
     ):
         """
         Collect samples either in parallel (multiprocessing) or sequentially.
