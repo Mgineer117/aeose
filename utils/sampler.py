@@ -237,6 +237,8 @@ class OnlineSampler(Base):
                         np.argmax(a)
                     )
 
+                    print(next_state)
+
                     barrier.wait()
 
                     if t == self.episode_len - 1:
