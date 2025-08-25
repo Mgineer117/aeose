@@ -134,7 +134,7 @@ class OnlineSampler(Base):
             max_retries = 2
             while collected < expected:
                 try:
-                    pid, data = queue.get(timeout=300)
+                    pid, data = queue.get(timeout=60)
                     if worker_memories[pid] is None:
                         worker_memories[pid] = data
                         collected += 1
