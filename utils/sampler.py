@@ -237,7 +237,7 @@ class OnlineSampler(Base):
                         np.argmax(a)
                     )
 
-                    print(next_state)
+                    print(pid, t, rew)
 
                     barrier.wait()
 
