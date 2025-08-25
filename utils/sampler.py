@@ -81,7 +81,7 @@ class OnlineSampler(Base):
 
         num_envs = 8
         self.envs = SubprocVecEnv(
-            [get_env(i) for i in range(num_envs)]
+            [get_env() for i in range(num_envs)]
         )  # uses spawn internally
 
         self.total_num_worker = ceil(batch_size / episode_len)
