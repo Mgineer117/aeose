@@ -135,23 +135,6 @@ elif target_distribution == "cities":
 
 
 def get_env():
-    # env_args = dict(
-    #     satellite=power_sat_generator(n_ahead=32, include_time=False)(
-    #         name="EO1-power",
-    #         sat_args=SAT_ARGS_POWER,
-    #     ),
-    #     scenario=targets,
-    #     rewarder=data.UniqueImageReward(),
-    #     sim_rate=1.0,
-    #     max_step_duration=300.0,
-    #     time_limit=duration,
-    #     failure_penalty=-1.0,
-    #     terminate_on_time_limit=True,
-    #     log_level="ERROR",
-    # )
-
-    # env = SatelliteTasking(**env_args)
-
     env = SatelliteTasking(
         satellite=power_sat_generator(n_ahead=32, include_time=False)(
             name="EO1-power",
