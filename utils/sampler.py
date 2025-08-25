@@ -134,7 +134,7 @@ class OnlineSampler(Base):
             max_retries = 2
             while collected < expected:
                 try:
-                    pid, data = queue.get(timeout=60)
+                    pid, data = queue.get(timeout=300)
                     if worker_memories[pid] is None:
                         worker_memories[pid] = data
                         collected += 1
@@ -224,7 +224,7 @@ class OnlineSampler(Base):
                 next_state, rew, term, trunc, infos = self.envs[pid].step(np.argmax(a))
 
                 print(
-                    f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew}, terminal: {term}, trunc: {trunc}"
+                    f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew:.2f}, terminal: {term}, trunc: {trunc}"
                 )
 
                 if t == self.episode_len - 1:
