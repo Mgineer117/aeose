@@ -118,11 +118,12 @@ class OnlineSampler(Base):
             processes = []
             self.envs = [get_env() for _ in range(self.total_num_worker)]
             queue = mp.Queue()
-            barrier = mp.Barrier(self.total_num_worker)
+            # barrier = mp.Barrier(self.total_num_worker)
             worker_memories = [None] * self.total_num_worker
 
             for i in range(self.total_num_worker):
-                args = (i, queue, barrier, policy, seed, deterministic)
+                # args = (i, queue, barrier, policy, seed, deterministic)
+                args = (i, queue, policy, seed, deterministic)
                 p = mp.Process(target=self.collect_trajectory, args=args)
                 processes.append(p)
                 p.start()
@@ -193,7 +194,7 @@ class OnlineSampler(Base):
         self,
         pid,
         queue,
-        barrier,
+        # barrier,
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
@@ -248,7 +249,7 @@ class OnlineSampler(Base):
                     active = False
                     current_time += t + 1
 
-            barrier.wait()
+            # barrier.wait()
 
             state = next_state
 
