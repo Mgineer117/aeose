@@ -72,7 +72,7 @@ def get_args():
     parser.add_argument(
         "--entropy-scaler", type=float, default=1e-3, help="Base learning rate."
     )
-    parser.add_argument("--gamma", type=float, default=0.9, help="Base learning rate.")
+    parser.add_argument("--gamma", type=float, default=0.99, help="Base learning rate.")
     parser.add_argument(
         "--gpu-idx", type=int, default=0, help="Number of training epochs."
     )
