@@ -118,12 +118,12 @@ class OnlineSampler(Base):
             # === Multiprocessing path ===
             processes = []
             queue = mp.Queue()
-            barrier = mp.Barrier(self.total_num_worker)
+            # barrier = mp.Barrier(self.total_num_worker)
             worker_memories = [None] * self.total_num_worker
 
             for i in range(self.total_num_worker):
-                args = (i, queue, barrier, policy, seed, deterministic)
-                # args = (i, queue, policy, seed, deterministic)
+                # args = (i, queue, barrier, policy, seed, deterministic)
+                args = (i, queue, policy, seed, deterministic)
                 p = mp.Process(target=self.collect_trajectory, args=args)
                 processes.append(p)
                 p.start()
@@ -194,7 +194,7 @@ class OnlineSampler(Base):
         self,
         pid,
         queue,
-        barrier,
+        # barrier,
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
@@ -222,9 +222,6 @@ class OnlineSampler(Base):
                     a, metaData = policy(state, deterministic=deterministic)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
-            barrier.wait()
-
-            if active:
                 # env stepping
                 next_state, rew, term, trunc, infos = env.step(np.argmax(a))
 
