@@ -79,6 +79,7 @@ class OnlineSampler(Base):
         )
 
         self.total_num_worker = ceil(batch_size / episode_len)
+        self.envs = [get_env() for _ in range(self.total_num_worker)]
 
         if verbose:
             print("Sampling Parameters:")
@@ -116,7 +117,6 @@ class OnlineSampler(Base):
         if use_mp:
             # === Multiprocessing path ===
             processes = []
-            self.envs = [get_env() for _ in range(self.total_num_worker)]
             queue = mp.Queue()
             barrier = mp.Barrier(self.total_num_worker)
             worker_memories = [None] * self.total_num_worker
@@ -221,6 +221,9 @@ class OnlineSampler(Base):
                     a, metaData = policy(state, deterministic=deterministic)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
+            barrier.wait()
+
+            if active:
                 # env stepping
                 next_state, rew, term, trunc, infos = self.envs[pid].step(np.argmax(a))
 
@@ -248,8 +251,6 @@ class OnlineSampler(Base):
                 if done:
                     active = False
                     current_time += t + 1
-
-            barrier.wait()
 
             state = next_state
 

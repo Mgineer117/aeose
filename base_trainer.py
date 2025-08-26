@@ -155,7 +155,6 @@ class Trainer:
                     image = self.env.render()
                     image_array.append(image)
 
-                print(a, np.argmax(a))
                 next_state, rew, term, trunc, infos = self.env.step(np.argmax(a))
                 if t == self.episode_len - 1:
                     # safe truncation

@@ -7,6 +7,7 @@ from torch.distributions import Categorical, MultivariateNormal, Normal
 from policy.layers.building_blocks import MLP
 from policy.base import Base
 
+
 class PPO_Actor(Base):
     """
     Psi Advantage Function: Psi(s,a) - (1/|A|)SUM_a' Psi(s, a')
@@ -19,7 +20,7 @@ class PPO_Actor(Base):
         action_dim: int,
         is_discrete: bool,
         activation: nn.Module = nn.Tanh(),
-        device = torch.device("cpu")
+        device=torch.device("cpu"),
     ):
         super().__init__(device=device)
 
@@ -100,7 +101,6 @@ class PPO_Actor(Base):
 
             logprobs = dist.log_prob(a).unsqueeze(-1)
             probs = torch.exp(logprobs)
-
             entropy = dist.entropy()
 
         a = F.one_hot(a, num_classes=logits.size(-1))

@@ -56,7 +56,7 @@ def get_args():
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
     parser.add_argument("--minibatch-size", type=int, default=2048, help="")
     parser.add_argument("--batch-size", type=int, default=128, help="")
-    parser.add_argument("--K-epochs", type=int, default=10, help="")
+    parser.add_argument("--K-epochs", type=int, default=5, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
@@ -72,7 +72,7 @@ def get_args():
     parser.add_argument(
         "--entropy-scaler", type=float, default=1e-3, help="Base learning rate."
     )
-    parser.add_argument("--gamma", type=float, default=0.99, help="Base learning rate.")
+    parser.add_argument("--gamma", type=float, default=0.9, help="Base learning rate.")
     parser.add_argument(
         "--gpu-idx", type=int, default=0, help="Number of training epochs."
     )
