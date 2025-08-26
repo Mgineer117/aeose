@@ -79,7 +79,7 @@ class OnlineSampler(Base):
         )
 
         self.total_num_worker = ceil(batch_size / episode_len)
-        self.envs = [get_env() for _ in range(self.total_num_worker)]
+        # self.envs = [get_env() for _ in range(self.total_num_worker)]
 
         if verbose:
             print("Sampling Parameters:")
@@ -214,7 +214,8 @@ class OnlineSampler(Base):
 
         # env initialization
         active = True
-        state, _ = self.envs[pid].reset(seed=worker_seed)
+        env = get_env()
+        state, _ = env.reset(seed=worker_seed)
         for t in range(self.episode_len):
             if active:  # this is to avoid barrier deadlock
                 with torch.no_grad():
@@ -225,7 +226,7 @@ class OnlineSampler(Base):
 
             if active:
                 # env stepping
-                next_state, rew, term, trunc, infos = self.envs[pid].step(np.argmax(a))
+                next_state, rew, term, trunc, infos = env.step(np.argmax(a))
 
                 # print(
                 #     f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew:.2f}, terminal: {term}, trunc: {trunc}"
@@ -254,7 +255,7 @@ class OnlineSampler(Base):
 
             state = next_state
 
-        self.envs[pid].close()
+        env.close()
 
         for k in data:
             data[k] = data[k][:current_time]
