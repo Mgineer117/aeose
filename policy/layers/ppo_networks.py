@@ -96,6 +96,7 @@ class PPO_Actor(Base):
             probs = torch.ones_like(logprobs)
             entropy = torch.zeros_like(logprobs)
         else:
+            print(torch.softmax(logits, dim=-1))
             dist = Categorical(logits=logits)
             a = dist.sample()
 
