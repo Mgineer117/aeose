@@ -24,6 +24,7 @@ class Trainer:
         sampler: OnlineSampler,
         logger: WandbLogger,
         writer: SummaryWriter,
+        episode_len: int,
         init_timesteps: int = 0,
         timesteps: int = 1e6,
         log_interval: int = 100,
@@ -40,6 +41,7 @@ class Trainer:
         self.writer = writer
 
         # training parameters
+        self.episode_len = episode_len
         self.init_timesteps = init_timesteps
         self.timesteps = timesteps
 
@@ -142,9 +144,9 @@ class Trainer:
             ep_reward = []
 
             # Env initialization
-            state, infos = self.env.reset(seed=self.seed)
+            state, _ = self.env.reset(seed=self.seed)
 
-            for t in range(self.env.max_steps):
+            for t in range(self.episode_len):
                 with torch.no_grad():
                     a, _ = self.policy(state, deterministic=True)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
@@ -153,8 +155,9 @@ class Trainer:
                     image = self.env.render()
                     image_array.append(image)
 
+                print(a, np.argmax(a))
                 next_state, rew, term, trunc, infos = self.env.step(np.argmax(a))
-                if t == self.env.max_steps - 1:
+                if t == self.episode_len - 1:
                     # safe truncation
                     trunc = True
                 done = term or trunc
@@ -167,14 +170,22 @@ class Trainer:
                         ep_reward, self.policy.gamma
                     )
                     ep_buffer.append(
-                        {"return": discounted_return, "episode_length": t + 1}
+                        {
+                            "return": discounted_return,
+                            "avg_reward": np.mean(ep_reward),
+                            "episode_length": t + 1,
+                        }
                     )
 
                     break
 
         return_list = [ep_info["return"] for ep_info in ep_buffer]
+        avg_reward_list = [ep_info["avg_reward"] for ep_info in ep_buffer]
         episode_length_list = [ep_info["episode_length"] for ep_info in ep_buffer]
         return_mean, return_std = np.mean(return_list), np.std(return_list)
+        avg_reward_mean, avg_reward_std = np.mean(avg_reward_list), np.std(
+            avg_reward_list
+        )
         epi_len_mean, epi_len_std = np.mean(episode_length_list), np.std(
             episode_length_list
         )
@@ -182,6 +193,8 @@ class Trainer:
         eval_dict = {
             f"eval/return_mean": return_mean,
             f"eval/return_std": return_std,
+            f"eval/avg_reward_mean": avg_reward_mean,
+            f"eval/avg_reward_std": avg_reward_std,
             f"eval/epi_len_mean": epi_len_mean,
             f"eval/epi_len_std": epi_len_std,
         }

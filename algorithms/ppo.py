@@ -35,6 +35,7 @@ class PPO_Algorithm(nn.Module):
             sampler=sampler,
             logger=self.logger,
             writer=self.writer,
+            episode_len=self.env.max_steps,
             timesteps=self.args.timesteps,
             log_interval=self.args.log_interval,
             eval_num=self.args.eval_num,
@@ -50,7 +51,7 @@ class PPO_Algorithm(nn.Module):
             hidden_dim=self.args.actor_fc_dim,
             action_dim=self.args.action_dim,
             is_discrete=self.args.is_discrete,
-            device=self.args.device
+            device=self.args.device,
         )
         critic = PPO_Critic(self.args.state_dim, hidden_dim=self.args.critic_fc_dim)
 
