@@ -94,7 +94,9 @@ class OffPolicyTrainer:
                             else [a.item()]
                         )
 
-                    next_state, reward, term, trunc, infos = self.env.step(np.argmax(action))
+                    next_state, reward, term, trunc, infos = self.env.step(
+                        np.argmax(action)
+                    )
                     if t == self.env.max_steps - 1:
                         # safe truncation
                         trunc = True
@@ -109,7 +111,6 @@ class OffPolicyTrainer:
                     pbar.update(1)
 
                     if done:
-
                         break
 
                 if step >= self.warmup_samples:

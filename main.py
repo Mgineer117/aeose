@@ -35,6 +35,10 @@ def run(args, seed, unique_id, exp_time):
         from algorithms.ddpg import DDPG_Algorithm
 
         algo = DDPG_Algorithm(env=env, logger=logger, writer=writer, args=args)
+    elif args.algo_name == "pd":
+        from algorithms.pd import PD_Algorithm
+
+        algo = PD_Algorithm(env=env, logger=logger, writer=writer, args=args)
     else:
         raise NotImplementedError(f"{args.algo_name} is not implemented.")
 
