@@ -57,7 +57,7 @@ class PD_Algorithm(nn.Module):
 
         target_actor = PPO_Actor(
             input_dim=self.args.state_dim,
-            hidden_dim=self.args.actor_fc_dim,
+            hidden_dim=self.args.target_actor_fc_dim,
             action_dim=self.args.action_dim,
             is_discrete=self.args.is_discrete,
             device=self.args.device,
