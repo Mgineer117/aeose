@@ -41,6 +41,9 @@ def get_args():
         "--eps-clip", type=float, default=0.2, help="Base learning rate."
     )
     parser.add_argument("--actor-fc-dim", type=int, nargs="+", default=[256, 256])
+    parser.add_argument(
+        "--target-actor-fc-dim", type=int, nargs="+", default=[256, 256]
+    )
     parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
 
     parser.add_argument(
@@ -55,7 +58,7 @@ def get_args():
     )
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
     parser.add_argument("--minibatch-size", type=int, default=2048, help="")
-    parser.add_argument("--batch-size", type=int, default=128, help="")
+    parser.add_argument("--batch-size", type=int, default=256, help="")
     parser.add_argument("--K-epochs", type=int, default=5, help="")
     parser.add_argument(
         "--target-kl",
@@ -73,6 +76,9 @@ def get_args():
         "--entropy-scaler", type=float, default=1e-3, help="Base learning rate."
     )
     parser.add_argument("--gamma", type=float, default=0.99, help="Base learning rate.")
+    parser.add_argument(
+        "--warmup-samples", type=int, default=1000, help="Base learning rate."
+    )
     parser.add_argument(
         "--gpu-idx", type=int, default=0, help="Number of training epochs."
     )

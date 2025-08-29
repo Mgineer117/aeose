@@ -67,7 +67,7 @@ class PD_Learner(Base):
         dist = infos["dist"]
 
         # find the kl loss between the distribution
-        kl_loss = kl_divergence(target_dist, dist)
+        kl_loss = kl_divergence(target_dist, dist).mean()
 
         # Update critic parameters
         self.optimizer.zero_grad()

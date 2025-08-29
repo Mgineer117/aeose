@@ -39,6 +39,7 @@ class PD_Algorithm(nn.Module):
             timesteps=self.args.timesteps,
             log_interval=self.args.log_interval,
             eval_num=self.args.eval_num,
+            warmup_samples=self.args.warmup_samples,
             rendering=self.args.rendering,
             seed=self.args.seed,
         )
@@ -62,16 +63,14 @@ class PD_Algorithm(nn.Module):
             device=self.args.device,
         )
 
-        model_path = (
-            f"model/model({'_'.join(str(x) for x in self.args.actor_fc_dim)}).pth"
-        )
+        model_path = f"model/model({'_'.join(str(x) for x in self.args.target_actor_fc_dim)}).pth"
         if os.path.exists(model_path):
             target_actor.load_state_dict(
                 torch.load(model_path, map_location=self.args.device)
             )
-            print(f"model at {model_path} is loaded!")
+            print(f"target model at {model_path} is loaded!")
         else:
-            raise FileNotFoundError(f"model at {model_path} is not found!")
+            raise FileNotFoundError(f"target model at {model_path} is not found!")
 
         self.policy = PD_Learner(
             actor=actor,
