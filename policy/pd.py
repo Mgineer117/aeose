@@ -19,6 +19,7 @@ class PD_Learner(Base):
         actor: PPO_Actor,
         target_actor: PPO_Actor,
         actor_lr: float = 3e-4,
+        gamma: float = 0.99,
         device: str = "cpu",
     ):
         super().__init__(device=device)
@@ -35,6 +36,8 @@ class PD_Learner(Base):
         self.target_actor = target_actor
 
         self.optimizer = torch.optim.Adam(params=self.actor.parameters(), lr=actor_lr)
+
+        self.gamma = gamma
 
         #
         self.to(self.dtype).to(self.device)

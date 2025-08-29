@@ -76,5 +76,6 @@ class PD_Algorithm(nn.Module):
             actor=actor,
             target_actor=target_actor,
             actor_lr=self.args.actor_lr,
+            gamma=self.args.gamma,
             device=self.args.device,
         )
