@@ -169,7 +169,7 @@ class OffPolicyTrainer:
 
             for t in range(self.env.max_steps):
                 with torch.no_grad():
-                    a, _ = self.policy(state, deterministic=True)
+                    a, _ = self.policy(state)  # , deterministic=True)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
                 if num_episodes == 0 and self.rendering:
