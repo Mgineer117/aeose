@@ -40,9 +40,9 @@ def get_args():
     parser.add_argument(
         "--eps-clip", type=float, default=0.2, help="Base learning rate."
     )
-    parser.add_argument("--actor-fc-dim", type=int, nargs="+", default=[256, 256])
+    parser.add_argument("--actor-fc-dim", type=int, nargs="+", default=[16, 16, 16])
     parser.add_argument(
-        "--target-actor-fc-dim", type=int, nargs="+", default=[256, 256]
+        "--target-actor-fc-dim", type=int, nargs="+", default=[128, 128, 128]
     )
     parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
 

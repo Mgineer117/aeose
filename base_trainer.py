@@ -50,7 +50,6 @@ class Trainer:
 
         # initialize the essential training components
         self.last_max_return_mean = -1e10
-        self.last_min_return_std = 1e10
 
         self.rendering = rendering
         self.seed = seed
@@ -59,7 +58,6 @@ class Trainer:
         start_time = time.time()
 
         self.last_return_mean = deque(maxlen=5)
-        self.last_return_std = deque(maxlen=5)
 
         # Train loop
         eval_idx = 0
@@ -127,7 +125,6 @@ class Trainer:
                         )
 
                         self.last_return_mean.append(eval_dict[f"eval/return_mean"])
-                        self.last_return_std.append(eval_dict[f"eval/return_std"])
 
                         self.save_model(step)
 
@@ -260,15 +257,11 @@ class Trainer:
             torch.save(model.state_dict(), path)
 
             # save the best model
-            if (
-                np.mean(self.last_return_mean) >= self.last_max_return_mean
-                and np.mean(self.last_return_std) <= self.last_min_return_std
-            ):
+            if np.mean(self.last_return_mean) >= self.last_max_return_mean:
                 name = f"best_model.pth"
                 path = os.path.join(self.logger.log_dir, name)
                 torch.save(model.state_dict(), path)
 
                 self.last_max_return_mean = np.mean(self.last_return_mean)
-                self.last_min_return_std = np.mean(self.last_return_std)
         else:
             raise ValueError("Error: Model is not identifiable!!!")
