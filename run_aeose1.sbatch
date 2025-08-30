@@ -12,7 +12,7 @@
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=minjae5@illinois.edu
 
-# Load conda
+# Load conda    
 source ~/.bashrc
 # Or: source /sw/apps/anaconda3/2024.10/etc/profile.d/conda.sh  # if ~/.bashrc doesn't source conda
 
