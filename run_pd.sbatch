@@ -20,7 +20,7 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --algo-name pd & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd & 
 
 # === Wait for all background jobs to finish ===
 wait
