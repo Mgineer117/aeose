@@ -3,7 +3,7 @@
 #SBATCH --account=huytran1-ic
 #SBATCH --partition=IllinoisComputes-GPU
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
+#SBATCH --ntasks=2
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --gres=gpu:1
@@ -21,6 +21,7 @@ conda activate aeose
 
 # === Run Experiments in Parallel ===
 CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name ppo --actor-fc-dim 4 4 & 
 
 # === Wait for all background jobs to finish ===
 wait
