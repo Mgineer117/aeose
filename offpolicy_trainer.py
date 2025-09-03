@@ -103,21 +103,23 @@ class OffPolicyTrainer:
                     self.replay_buffer.append(state, action, next_state, reward, done)
 
                     if step >= self.warmup_samples:
-                        loss_dict, update_time = policy.learn(self.replay_buffer)
+                        loss_dict, update_time, policy_infos = policy.learn(
+                            self.replay_buffer
+                        )
 
                     state = next_state
                     pbar.update(1)
 
-                    if done:
+                    if done or policy_infos["termination"]:
                         break
 
+                #### EVALUATIONS ####
                 if step >= self.warmup_samples:
                     # Update environment steps and calculate time metrics
                     loss_dict[f"{self.policy.name}/analytics/timesteps"] = step
                     loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
                     self.write_log(loss_dict, step=step)
 
-                    #### EVALUATIONS ####
                     if step >= self.eval_interval * (eval_idx + 1):
                         ### Eval Loop
                         self.policy.eval()
@@ -151,6 +153,10 @@ class OffPolicyTrainer:
                         self.last_return_mean.append(eval_dict[f"eval/return_mean"])
 
                         self.save_model(step)
+
+                # terminate the training loop
+                if policy_infos["termination"]:
+                    break
 
                 torch.cuda.empty_cache()
 

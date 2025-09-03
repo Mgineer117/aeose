@@ -57,7 +57,7 @@ class Trainer:
     def train(self) -> dict[str, float]:
         start_time = time.time()
 
-        self.last_return_mean = deque(maxlen=5)
+        self.last_return_mean = deque(maxlen=1)
 
         # Train loop
         eval_idx = 0

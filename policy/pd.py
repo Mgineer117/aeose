@@ -18,8 +18,9 @@ class PD_Learner(Base):
         self,
         actor: PPO_Actor,
         target_actor: PPO_Actor,
-        actor_lr: float = 3e-4,
-        gamma: float = 0.99,
+        actor_lr: float,
+        target_kl: float,
+        gamma: float,
         device: str = "cpu",
     ):
         super().__init__(device=device)
@@ -38,6 +39,7 @@ class PD_Learner(Base):
         self.optimizer = torch.optim.Adam(params=self.actor.parameters(), lr=actor_lr)
 
         self.gamma = gamma
+        self.target_kl = target_kl
 
         #
         self.to(self.dtype).to(self.device)
@@ -94,4 +96,8 @@ class PD_Learner(Base):
 
         self.eval()
 
-        return loss_dict, update_time
+        # return the additional info
+        termination = True if kl_loss > self.target_kl else False
+        infos = {"termination": termination}
+
+        return loss_dict, update_time, infos
