@@ -1,9 +1,0 @@
-nohup python3 main.py --project aeose --actor-fc-dim 16 16 16 & 
-nohup python3 main.py --project aeose --actor-fc-dim 32 32 32 & 
-nohup python3 main.py --project aeose --actor-fc-dim 64 64 64 & 
-nohup python3 main.py --project aeose --actor-fc-dim 128 128 128 & 
-
-nohup python3 main.py --project aeose --actor-fc-dim 16 16 16 16 & 
-nohup python3 main.py --project aeose --actor-fc-dim 32 32 32 32 & 
-nohup python3 main.py --project aeose --actor-fc-dim 64 64 64 64 & 
-nohup python3 main.py --project aeose --actor-fc-dim 128 128 128 128 & 
