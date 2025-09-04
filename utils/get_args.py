@@ -32,7 +32,7 @@ def get_args():
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=3e-4, help="Base learning rate."
+        "--actor-lr", type=float, default=1e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--critic-lr", type=float, default=3e-4, help="Base learning rate."
