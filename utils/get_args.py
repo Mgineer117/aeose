@@ -32,7 +32,7 @@ def get_args():
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=1e-4, help="Base learning rate."
+        "--actor-lr", type=float, default=3e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--critic-lr", type=float, default=3e-4, help="Base learning rate."
@@ -59,11 +59,11 @@ def get_args():
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
     parser.add_argument("--minibatch-size", type=int, default=1024, help="")
     parser.add_argument("--batch-size", type=int, default=256, help="")
-    parser.add_argument("--K-epochs", type=int, default=5, help="")
+    parser.add_argument("--K-epochs", type=int, default=10, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
-        default=0.03,
+        default=0.01,
         help="Upper bound of the eigenvalue of the dual metric.",
     )
     parser.add_argument(
