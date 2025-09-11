@@ -3,7 +3,7 @@
 #SBATCH --account=huytran1-ic
 #SBATCH --partition=csl
 #SBATCH --nodes=1
-#SBATCH --ntasks=10
+#SBATCH --ntasks=9
 #SBATCH --cpus-per-task=6
 #SBATCH --gres=gpu:2
 #SBATCH --time=7-00:00:00
@@ -19,16 +19,15 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 4 4 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 8 8 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 16 16 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 32 32 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 128 128 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 256 256 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 512 512 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 1024 1024 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 2048 2048 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 1 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 2 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 3 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 512 512 --seed 1 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 512 512 --seed 2 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 512 512 --seed 3 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 1 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 2 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 3 & 
 
 # === Wait for all background jobs to finish ===
 wait
