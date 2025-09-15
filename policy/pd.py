@@ -97,7 +97,7 @@ class PD_Learner(Base):
         self.eval()
 
         # return the additional info
-        termination = True if kl_loss > self.target_kl else False
+        termination = True if kl_loss <= self.target_kl else False
         infos = {"termination": termination}
 
         return loss_dict, update_time, infos
