@@ -21,7 +21,7 @@ conda activate aeose
 
 # === Run Experiments in Parallel ===
 CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name ppo --actor-fc-dim 4 4 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name ppo --actor-fc-dim 1 & 
 
 # === Wait for all background jobs to finish ===
 wait
