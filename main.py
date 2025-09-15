@@ -68,7 +68,7 @@ if __name__ == "__main__":
     print(f"      Time Begun   : {exp_time}")
     print(f"-------------------------------------------------------")
 
-    for seed in range(seeds):
+    for seed in seeds:
         args = get_args()
         args.seed = seed
 
