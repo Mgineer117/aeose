@@ -12,7 +12,7 @@ from utils.functions import concat_csv_columnwise_and_delete, seed_all, setup_lo
 from utils.get_args import get_args
 
 
-def run(args, seed, unique_id, exp_time):
+def run(args, seed, unique_id, exp_time, run_id):
     # fix seed
     seed_all(seed)
 
@@ -38,7 +38,9 @@ def run(args, seed, unique_id, exp_time):
     elif args.algo_name == "pd":
         from algorithms.pd import PD_Algorithm
 
-        algo = PD_Algorithm(env=env, logger=logger, writer=writer, args=args)
+        algo = PD_Algorithm(
+            env=env, logger=logger, writer=writer, args=args, run_id=run_id
+        )
     else:
         raise NotImplementedError(f"{args.algo_name} is not implemented.")
 
@@ -66,9 +68,9 @@ if __name__ == "__main__":
     print(f"      Time Begun   : {exp_time}")
     print(f"-------------------------------------------------------")
 
-    for seed in seeds:
+    for i, seed in enumerate(seeds):
         args = get_args()
         args.seed = seed
 
-        run(args, seed, unique_id, exp_time)
+        run(args, seed, unique_id, exp_time, i)
     concat_csv_columnwise_and_delete(folder_path=args.logdir)

@@ -9,7 +9,7 @@ from utils.replay_buffer import ReplayBuffer
 
 
 class PD_Algorithm(nn.Module):
-    def __init__(self, env, logger, writer, args):
+    def __init__(self, env, logger, writer, args, run_id):
         super(PD_Algorithm, self).__init__()
 
         # === Parameter saving === #
@@ -17,6 +17,7 @@ class PD_Algorithm(nn.Module):
         self.logger = logger
         self.writer = writer
         self.args = args
+        self.run_id = run_id
 
     def begin_training(self):
         # === Define policy === #
@@ -63,7 +64,7 @@ class PD_Algorithm(nn.Module):
             device=self.args.device,
         )
 
-        model_path = f"model/model({'_'.join(str(x) for x in self.args.target_actor_fc_dim)}).pth"
+        model_path = f"model/model({'_'.join(str(x) for x in self.args.target_actor_fc_dim)})_{self.run_id}.pth"
         if os.path.exists(model_path):
             target_actor.load_state_dict(
                 torch.load(model_path, map_location=self.args.device)
