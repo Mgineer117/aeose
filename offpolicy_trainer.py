@@ -67,6 +67,7 @@ class OffPolicyTrainer:
 
         # Train loop
         eval_idx = 0
+        policy_infos = {"termination": False}
         with tqdm(
             total=self.timesteps + self.init_timesteps,
             initial=self.init_timesteps,
