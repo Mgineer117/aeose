@@ -30,6 +30,9 @@ def get_args():
     parser.add_argument(
         "--num-runs", type=int, default=1, help="Number of samples for training."
     )
+    parser.add_argument(
+        "--run-id", type=int, default=0, help="Unique identifier for the run."
+    )
 
     parser.add_argument(
         "--actor-lr", type=float, default=5e-5, help="Base learning rate."
@@ -44,7 +47,7 @@ def get_args():
         "--actor-fc-dim",
         type=int,
         nargs="+",
-        default=[1],
+        default=[4],
     )
     parser.add_argument(
         "--target-actor-fc-dim", type=int, nargs="+", default=[256, 256]

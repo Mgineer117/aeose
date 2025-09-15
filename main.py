@@ -68,9 +68,9 @@ if __name__ == "__main__":
     print(f"      Time Begun   : {exp_time}")
     print(f"-------------------------------------------------------")
 
-    for i, seed in enumerate(seeds):
+    for seed in range(seeds):
         args = get_args()
         args.seed = seed
 
-        run(args, seed, unique_id, exp_time, i)
+        run(args, seed, unique_id, exp_time, args.run_id)
     concat_csv_columnwise_and_delete(folder_path=args.logdir)
