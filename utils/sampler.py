@@ -79,6 +79,7 @@ class OnlineSampler(Base):
         )
 
         self.total_num_worker = ceil(batch_size / episode_len)
+        # self.envs = [get_env() for _ in range(self.total_num_worker)]
 
         if verbose:
             print("Sampling Parameters:")
@@ -88,12 +89,10 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
-        env,
         policy,
         seed: int | None = None,
         deterministic: bool = False,
-        random_init_pos: bool = False,
-        use_mp: bool = False,
+        use_mp: bool = True,
     ):
         """
         Collect samples either in parallel (multiprocessing) or sequentially.
@@ -119,18 +118,12 @@ class OnlineSampler(Base):
             # === Multiprocessing path ===
             processes = []
             queue = mp.Queue()
+            # barrier = mp.Barrier(self.total_num_worker)
             worker_memories = [None] * self.total_num_worker
 
             for i in range(self.total_num_worker):
-                args = (
-                    env,
-                    i,
-                    queue,
-                    policy,
-                    seed,
-                    deterministic,
-                    random_init_pos,
-                )
+                # args = (i, queue, barrier, policy, seed, deterministic)
+                args = (i, queue, policy, seed, deterministic)
                 p = mp.Process(target=self.collect_trajectory, args=args)
                 processes.append(p)
                 p.start()
@@ -182,9 +175,7 @@ class OnlineSampler(Base):
             # === Single-process path ===
             worker_memories = []
             for i in range(self.total_num_worker):
-                wm = self.collect_trajectory(
-                    env, i, None, policy, seed, deterministic, random_init_pos
-                )
+                wm = self.collect_trajectory(i, None, policy, seed, deterministic)
                 worker_memories.append(wm)
 
             for wm in worker_memories:
@@ -201,13 +192,12 @@ class OnlineSampler(Base):
 
     def collect_trajectory(
         self,
-        env,
         pid,
         queue,
+        # barrier,
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
-        random_init_pos: bool = False,
     ):
         # assign per-worker seed
         worker_seed = seed + pid
@@ -218,25 +208,30 @@ class OnlineSampler(Base):
             torch.cuda.manual_seed_all(worker_seed)
 
         # estimate the batch size to hava a large batch
-        # env = get_env()
         data = self.get_reset_data()  # allocate memory
 
         current_time = 0
-        while current_time < self.episode_len:
-            # env initialization
-            options = {"random_init_pos": random_init_pos}
-            state, _ = env.reset(seed=worker_seed, options=options)
 
-            for t in range(self.episode_len):
+        # env initialization
+        active = True
+        env = get_env()
+        state, _ = env.reset(seed=worker_seed)
+        for t in range(self.episode_len):
+            if active:  # this is to avoid barrier deadlock
                 with torch.no_grad():
                     a, metaData = policy(state, deterministic=deterministic)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
-                    # env stepping
-                    next_state, rew, term, trunc, infos = env.step(np.argmax(a))
-                    if t == self.episode_len - 1:
-                        trunc = True  # force truncation at the end of episode
-                    done = term or trunc
+                # env stepping
+                next_state, rew, term, trunc, infos = env.step(np.argmax(a))
+
+                # print(
+                #     f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew:.2f}, terminal: {term}, trunc: {trunc}"
+                # )
+
+                if t == self.episode_len - 1:
+                    trunc = True  # force truncation at the end of episode
+                done = term or trunc
 
                 # saving the data
                 data["states"][current_time + t] = state
@@ -252,10 +247,12 @@ class OnlineSampler(Base):
                 )
 
                 if done:
+                    active = False
                     current_time += t + 1
-                    break
 
-                state = next_state
+            state = next_state
+
+        env.close()
 
         for k in data:
             data[k] = data[k][:current_time]

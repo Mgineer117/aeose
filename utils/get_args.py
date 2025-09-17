@@ -28,35 +28,46 @@ def get_args():
     parser.add_argument("--algo-name", type=str, default="ppo", help="Disable cuda.")
     parser.add_argument("--seed", type=int, default=42, help="Batch size.")
     parser.add_argument(
-        "--num-runs", type=int, default=10, help="Number of samples for training."
+        "--num-runs", type=int, default=1, help="Number of samples for training."
+    )
+    parser.add_argument(
+        "--run-id", type=int, default=0, help="Unique identifier for the run."
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=1e-4, help="Base learning rate."
+        "--actor-lr", type=float, default=5e-5, help="Base learning rate."
     )
     parser.add_argument(
-        "--critic-lr", type=float, default=3e-4, help="Base learning rate."
+        "--critic-lr", type=float, default=1e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--eps-clip", type=float, default=0.2, help="Base learning rate."
     )
-    parser.add_argument("--actor-fc-dim", type=int, nargs="+", default=[256, 256])
-    parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
+    parser.add_argument(
+        "--actor-fc-dim",
+        type=int,
+        nargs="+",
+        default=[256, 256],
+    )
+    parser.add_argument(
+        "--target-actor-fc-dim", type=int, nargs="+", default=[256, 256]
+    )
+    parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[128, 128])
 
     parser.add_argument(
-        "--timesteps", type=int, default=1e6, help="Number of training epochs."
+        "--timesteps", type=int, default=3e6, help="Number of training epochs."
     )
 
     parser.add_argument(
-        "--log-interval", type=int, default=100, help="Number of training epochs."
+        "--log-interval", type=int, default=20, help="Number of training epochs."
     )
     parser.add_argument(
-        "--eval-num", type=int, default=1, help="Number of training epochs."
+        "--eval-num", type=int, default=5, help="Number of training epochs."
     )
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
     parser.add_argument("--minibatch-size", type=int, default=2048, help="")
-    parser.add_argument("--batch-size", type=int, default=128, help="")
-    parser.add_argument("--K-epochs", type=int, default=10, help="")
+    parser.add_argument("--batch-size", type=int, default=256, help="")
+    parser.add_argument("--K-epochs", type=int, default=50, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
@@ -73,6 +84,9 @@ def get_args():
         "--entropy-scaler", type=float, default=1e-3, help="Base learning rate."
     )
     parser.add_argument("--gamma", type=float, default=0.99, help="Base learning rate.")
+    parser.add_argument(
+        "--warmup-samples", type=int, default=1000, help="Base learning rate."
+    )
     parser.add_argument(
         "--gpu-idx", type=int, default=0, help="Number of training epochs."
     )

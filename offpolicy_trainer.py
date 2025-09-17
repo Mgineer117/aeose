@@ -56,7 +56,6 @@ class OffPolicyTrainer:
 
         # initialize the essential training components
         self.last_max_return_mean = 1e10
-        self.last_min_return_std = 1e10
 
         self.rendering = rendering
         self.seed = seed
@@ -65,10 +64,10 @@ class OffPolicyTrainer:
         start_time = time.time()
 
         self.last_return_mean = deque(maxlen=5)
-        self.last_return_std = deque(maxlen=5)
 
         # Train loop
         eval_idx = 0
+        policy_infos = {"termination": False}
         with tqdm(
             total=self.timesteps + self.init_timesteps,
             initial=self.init_timesteps,
@@ -94,7 +93,9 @@ class OffPolicyTrainer:
                             else [a.item()]
                         )
 
-                    next_state, reward, term, trunc, infos = self.env.step(np.argmax(action))
+                    next_state, reward, term, trunc, infos = self.env.step(
+                        np.argmax(action)
+                    )
                     if t == self.env.max_steps - 1:
                         # safe truncation
                         trunc = True
@@ -103,22 +104,23 @@ class OffPolicyTrainer:
                     self.replay_buffer.append(state, action, next_state, reward, done)
 
                     if step >= self.warmup_samples:
-                        loss_dict, update_time = policy.learn(self.replay_buffer)
+                        loss_dict, update_time, policy_infos = policy.learn(
+                            self.replay_buffer
+                        )
 
                     state = next_state
                     pbar.update(1)
 
-                    if done:
-
+                    if done or policy_infos["termination"]:
                         break
 
+                #### EVALUATIONS ####
                 if step >= self.warmup_samples:
                     # Update environment steps and calculate time metrics
                     loss_dict[f"{self.policy.name}/analytics/timesteps"] = step
                     loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
                     self.write_log(loss_dict, step=step)
 
-                    #### EVALUATIONS ####
                     if step >= self.eval_interval * (eval_idx + 1):
                         ### Eval Loop
                         self.policy.eval()
@@ -150,9 +152,12 @@ class OffPolicyTrainer:
                         )
 
                         self.last_return_mean.append(eval_dict[f"eval/return_mean"])
-                        self.last_return_std.append(eval_dict[f"eval/return_std"])
 
                         self.save_model(step)
+
+                # terminate the training loop
+                if policy_infos["termination"]:
+                    break
 
                 torch.cuda.empty_cache()
 
@@ -171,7 +176,7 @@ class OffPolicyTrainer:
 
             for t in range(self.env.max_steps):
                 with torch.no_grad():
-                    a, _ = self.policy(state, deterministic=True)
+                    a, _ = self.policy(state)  # , deterministic=True)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
                 if num_episodes == 0 and self.rendering:
@@ -244,16 +249,12 @@ class OffPolicyTrainer:
             torch.save(model.state_dict(), path)
 
             # save the best model
-            if (
-                np.mean(self.last_return_mean) < self.last_max_return_mean
-                and np.mean(self.last_return_std) <= self.last_min_return_std
-            ):
+            if np.mean(self.last_return_mean) < self.last_max_return_mean:
                 name = f"best_model.pth"
                 path = os.path.join(self.logger.log_dir, name)
                 torch.save(model.state_dict(), path)
 
                 self.last_max_return_mean = np.mean(self.last_return_mean)
-                self.last_min_return_std = np.mean(self.last_return_std)
         else:
             raise ValueError("Error: Model is not identifiable!!!")
 

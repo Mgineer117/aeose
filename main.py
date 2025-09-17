@@ -12,13 +12,13 @@ from utils.functions import concat_csv_columnwise_and_delete, seed_all, setup_lo
 from utils.get_args import get_args
 
 
-def run(args, seed, unique_id, exp_time):
+def run(args, seed, unique_id, exp_time, run_id):
     # fix seed
     seed_all(seed)
 
     # get env
     env = get_env()
-    env.max_steps = 1000
+    env.max_steps = 200
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
     args.episode_len = env.max_steps
@@ -35,6 +35,12 @@ def run(args, seed, unique_id, exp_time):
         from algorithms.ddpg import DDPG_Algorithm
 
         algo = DDPG_Algorithm(env=env, logger=logger, writer=writer, args=args)
+    elif args.algo_name == "pd":
+        from algorithms.pd import PD_Algorithm
+
+        algo = PD_Algorithm(
+            env=env, logger=logger, writer=writer, args=args, run_id=run_id
+        )
     else:
         raise NotImplementedError(f"{args.algo_name} is not implemented.")
 
@@ -48,6 +54,7 @@ def run(args, seed, unique_id, exp_time):
 
 if __name__ == "__main__":
     torch.set_default_dtype(torch.float32)
+    mp.set_start_method("spawn", force=True)
 
     init_args = get_args()
     unique_id = str(uuid.uuid4())[:4]
@@ -65,5 +72,5 @@ if __name__ == "__main__":
         args = get_args()
         args.seed = seed
 
-        run(args, seed, unique_id, exp_time)
+        run(args, seed, unique_id, exp_time, args.run_id)
     concat_csv_columnwise_and_delete(folder_path=args.logdir)
