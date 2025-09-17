@@ -49,6 +49,7 @@ class Base:
 class OnlineSampler(Base):
     def __init__(
         self,
+        env_name: str,
         state_dim: tuple,
         action_dim: int,
         episode_len: int,
