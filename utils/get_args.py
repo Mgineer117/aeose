@@ -55,7 +55,7 @@ def get_args():
     parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[128, 128])
 
     parser.add_argument(
-        "--timesteps", type=int, default=3e6, help="Number of training epochs."
+        "--timesteps", type=int, default=5e6, help="Number of training epochs."
     )
 
     parser.add_argument(
