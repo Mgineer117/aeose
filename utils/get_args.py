@@ -25,7 +25,9 @@ def get_args():
         default=None,
         help='Seed-specific folder name in the "group" folder.',
     )
-    parser.add_argument("--env-name", type=str, default="ppo", help="Environment name.")
+    parser.add_argument(
+        "--env-name", type=str, default="basic", help="Environment name."
+    )
     parser.add_argument("--algo-name", type=str, default="ppo", help="Algorithm name.")
     parser.add_argument("--seed", type=int, default=42, help="Batch size.")
     parser.add_argument(
