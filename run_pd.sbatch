@@ -20,20 +20,20 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
-CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd --actor-fc-dim 4 --timesteps 100000 --seed 99 --run-id 0 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd --actor-fc-dim 4 --timesteps 100000 --seed 98 --run-id 0 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd --actor-fc-dim 4 --timesteps 100000 --seed 99 --run-id 1 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd --actor-fc-dim 4 --timesteps 100000 --seed 99 --run-id 2 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name ppo --actor-fc-dim 4 --seed 99 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name pd --actor-fc-dim 4 --timesteps 100000 --seed 100 --run-id 2 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --algo-name ppo --actor-fc-dim 4 --seed 100 & 
 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --algo-name pd --actor-fc-dim 16 --timesteps 100000 --seed 99 --run-id 0 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --algo-name pd --actor-fc-dim 16 --timesteps 100000 --seed 98 --run-id 0 & 
 CUDA_VISIBLE_DEVICES=1 python3 main.py --algo-name pd --actor-fc-dim 16 --timesteps 100000 --seed 99 --run-id 1 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --algo-name pd --actor-fc-dim 16 --timesteps 100000 --seed 99 --run-id 2 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --algo-name ppo --actor-fc-dim 16 --seed 99 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --algo-name pd --actor-fc-dim 16 --timesteps 100000 --seed 100 --run-id 2 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --algo-name ppo --actor-fc-dim 16 --seed 100 & 
 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --algo-name pd --actor-fc-dim 32 --timesteps 100000 --seed 99 --run-id 0 & 
+CUDA_VISIBLE_DEVICES=2 python3 main.py --algo-name pd --actor-fc-dim 32 --timesteps 100000 --seed 98 --run-id 0 & 
 CUDA_VISIBLE_DEVICES=2 python3 main.py --algo-name pd --actor-fc-dim 32 --timesteps 100000 --seed 99 --run-id 1 & 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --algo-name pd --actor-fc-dim 32 --timesteps 100000 --seed 99 --run-id 2 & 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --algo-name ppo --actor-fc-dim 32 --seed 99 & 
+CUDA_VISIBLE_DEVICES=2 python3 main.py --algo-name pd --actor-fc-dim 32 --timesteps 100000 --seed 100 --run-id 2 & 
+CUDA_VISIBLE_DEVICES=2 python3 main.py --algo-name ppo --actor-fc-dim 32 --seed 100 &
 
 # === Wait for all background jobs to finish ===
 wait
