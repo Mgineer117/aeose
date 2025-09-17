@@ -34,7 +34,7 @@ def run(args, seed, unique_id, exp_time, run_id):
 
     # get env
     env = call_env(args)
-    env.max_steps = 200
+    env.max_steps = 1000
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
     args.episode_len = env.max_steps

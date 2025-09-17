@@ -55,14 +55,14 @@ def get_args():
     parser.add_argument(
         "--target-actor-fc-dim", type=int, nargs="+", default=[256, 256]
     )
-    parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[128, 128])
+    parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
 
     parser.add_argument(
-        "--timesteps", type=int, default=5e6, help="Number of training epochs."
+        "--timesteps", type=int, default=1e7, help="Number of training epochs."
     )
 
     parser.add_argument(
-        "--log-interval", type=int, default=20, help="Number of training epochs."
+        "--log-interval", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument(
         "--eval-num", type=int, default=5, help="Number of training epochs."

@@ -19,12 +19,12 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 1 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 2 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 3 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 1 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 2 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 3 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 512 512 --seed 1 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 512 512 --seed 2 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 512 512 --seed 3 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 1 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 2 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 3 & 
