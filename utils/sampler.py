@@ -3,12 +3,13 @@ import time
 from datetime import date
 from math import ceil, floor
 from queue import Empty
-from main import call_env
+
 import numpy as np
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 
+from get_env import get_env
 from utils.functions import temp_seed
 
 today = date.today()
@@ -48,7 +49,6 @@ class Base:
 class OnlineSampler(Base):
     def __init__(
         self,
-        env_name: str,
         state_dim: tuple,
         action_dim: int,
         episode_len: int,
@@ -78,8 +78,6 @@ class OnlineSampler(Base):
             batch_size=batch_size,
         )
 
-        self.env_name = env_name
-        self.get_env = call_env
         self.total_num_worker = ceil(batch_size / episode_len)
         # self.envs = [get_env() for _ in range(self.total_num_worker)]
 
@@ -216,7 +214,7 @@ class OnlineSampler(Base):
 
         # env initialization
         active = True
-        env = self.get_env(self.env_name)
+        env = get_env()
         state, _ = env.reset(seed=worker_seed)
         for t in range(self.episode_len):
             if active:  # this is to avoid barrier deadlock

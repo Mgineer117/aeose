@@ -23,7 +23,6 @@ class PPO_Algorithm(nn.Module):
 
         # === Sampler === #
         sampler = OnlineSampler(
-            env_name=self.args.env_name,
             state_dim=self.args.state_dim,
             action_dim=self.args.action_dim,
             episode_len=self.env.max_steps,

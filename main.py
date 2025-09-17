@@ -9,23 +9,7 @@ import torch.multiprocessing as mp
 import wandb
 from utils.functions import concat_csv_columnwise_and_delete, seed_all, setup_logger
 from utils.get_args import get_args
-
-
-def call_env(env_name: str):
-    if env_name == "basic":
-        from utils.get_env import get_env
-
-        return get_env()
-    elif env_name == "desat_only":
-        from utils.get_env_desat_only import get_env
-
-        return get_env()
-    elif env_name == "downlink":
-        from utils.get_env_2023b_desat_downlink import get_env
-
-        return get_env()
-    else:
-        raise NotImplementedError(f"{env_name} is not implemented.")
+from utils.get_env import get_env
 
 
 def run(args, seed, unique_id, exp_time, run_id):
@@ -33,7 +17,7 @@ def run(args, seed, unique_id, exp_time, run_id):
     seed_all(seed)
 
     # get env
-    env = call_env(args.env_name)
+    env = get_env(args)
     env.max_steps = 1000
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
