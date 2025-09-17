@@ -49,6 +49,7 @@ class Base:
 class OnlineSampler(Base):
     def __init__(
         self,
+        env_name: str,
         state_dim: tuple,
         action_dim: int,
         episode_len: int,
@@ -78,6 +79,7 @@ class OnlineSampler(Base):
             batch_size=batch_size,
         )
 
+        self.env_name = env_name
         self.total_num_worker = ceil(batch_size / episode_len)
         # self.envs = [get_env() for _ in range(self.total_num_worker)]
 
@@ -214,7 +216,7 @@ class OnlineSampler(Base):
 
         # env initialization
         active = True
-        env = get_env()
+        env = get_env(self.env_name)
         state, _ = env.reset(seed=worker_seed)
         for t in range(self.episode_len):
             if active:  # this is to avoid barrier deadlock

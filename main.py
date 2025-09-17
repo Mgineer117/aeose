@@ -17,7 +17,7 @@ def run(args, seed, unique_id, exp_time, run_id):
     seed_all(seed)
 
     # get env
-    env = get_env(args)
+    env = get_env(args.env_name)
     env.max_steps = 1000
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n

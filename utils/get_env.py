@@ -136,11 +136,11 @@ elif target_distribution == "cities":
     targets = scene.CityTargets(n_targets)
 
 
-def get_env(args):
-    if args.env_name == "basic":
+def get_env(env_name):
+    if env_name == "basic":
         rewarders = [data.UniqueImageReward()]
     else:
-        NotImplementedError(f"{args.env_name} is not implemented.")
+        NotImplementedError(f"{env_name} is not implemented.")
 
     env = SatelliteTasking(
         satellite=power_sat_generator(n_ahead=32, include_time=False)(
