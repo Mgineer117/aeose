@@ -8,6 +8,53 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
+from bsk_rl.data.base import Data, DataStore, GlobalReward
+
+
+class NoData(Data):
+    """Holds no data."""
+
+    def __init__(self, *args, **kwargs):
+        """Holds no data."""
+        return super().__init__(*args, **kwargs)
+
+    def __add__(self, other):
+        """Add nothing to nothing."""
+        return self.__class__()
+
+
+class NoDataStore(DataStore):
+    """DataStore for no data."""
+
+    data_type = NoData
+
+    def __init__(self, *args, **kwargs):
+        """Stores and generates no data."""
+        return super().__init__(*args, **kwargs)
+
+    def compare_log_states(self, old_state, new_state):
+        """Always returns no data."""
+        return self.data_type()
+
+
+class NoReward(GlobalReward):
+    """GlobalReward for no data."""
+
+    data_store_type = NoDataStore
+
+    def __init__(self, *args, **kwargs):
+        """Returns zero reward at every step.
+
+        This reward system is useful for debugging environments, but is not useful for
+        training, since reward is always zero for every satellite.
+        """
+        return super().__init__(*args, **kwargs)
+
+    def calculate_reward(self, new_data_dict):
+        """Reward nothing."""
+        print(new_data_dict)
+        return {sat: 0.0 for sat in new_data_dict.keys()}
+
 
 class Density(obs.Observation):
     def __init__(
@@ -141,7 +188,8 @@ def get_env():
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
-        rewarder=data.UniqueImageReward(),
+        # rewarder=data.UniqueImageReward(),
+        rewarder=NoReward(),
         sim_rate=0.5,
         max_step_duration=300.0,
         time_limit=duration,
