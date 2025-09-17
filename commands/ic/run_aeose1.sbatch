@@ -4,7 +4,7 @@
 #SBATCH --partition=IllinoisComputes-GPU
 #SBATCH --nodes=1
 #SBATCH --ntasks=9
-#SBATCH --cpus-per-task=6
+#SBATCH --cpus-per-task=7
 #SBATCH --gres=gpu:2
 #SBATCH --time=3-00:00:00
 #SBATCH --output=aeose.o%j

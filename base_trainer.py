@@ -138,14 +138,17 @@ class Trainer:
         ep_buffer = []
         image_array = []
         for num_episodes in range(self.eval_num):
-            ep_reward = []
+            ep_reward, ep_inf = [], []
 
             # Env initialization
             state, _ = self.env.reset(seed=self.seed)
 
             for t in range(self.episode_len):
                 with torch.no_grad():
+                    t0 = time.time()
                     a, _ = self.policy(state)  # , deterministic=True)
+                    t1 = time.time()
+                    ep_inf.append(t1 - t0)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
                 if num_episodes == 0 and self.rendering:
@@ -170,6 +173,7 @@ class Trainer:
                             "return": discounted_return,
                             "avg_reward": np.mean(ep_reward),
                             "episode_length": t + 1,
+                            "inf_time": np.mean(ep_inf),
                         }
                     )
 
@@ -178,6 +182,7 @@ class Trainer:
         return_list = [ep_info["return"] for ep_info in ep_buffer]
         avg_reward_list = [ep_info["avg_reward"] for ep_info in ep_buffer]
         episode_length_list = [ep_info["episode_length"] for ep_info in ep_buffer]
+        inf_time_list = [ep_info["inf_time"] for ep_info in ep_buffer]
         return_mean, return_std = np.mean(return_list), np.std(return_list)
         avg_reward_mean, avg_reward_std = np.mean(avg_reward_list), np.std(
             avg_reward_list
@@ -185,6 +190,7 @@ class Trainer:
         epi_len_mean, epi_len_std = np.mean(episode_length_list), np.std(
             episode_length_list
         )
+        inf_time_mean, inf_time_std = np.mean(inf_time_list), np.std(inf_time_list)
 
         eval_dict = {
             f"eval/return_mean": return_mean,
@@ -193,6 +199,8 @@ class Trainer:
             f"eval/avg_reward_std": avg_reward_std,
             f"eval/epi_len_mean": epi_len_mean,
             f"eval/epi_len_std": epi_len_std,
+            f"eval/inf_time_mean": inf_time_mean,
+            f"eval/inf_time_std": inf_time_std,
         }
 
         return eval_dict, image_array
