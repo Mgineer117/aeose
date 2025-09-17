@@ -5,13 +5,13 @@ from Basilisk.utilities import orbitalMotion
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
 from bsk_rl.sim import fsw
 from bsk_rl.utils.orbital import random_orbit, rv2HN
-from bsk_rl.sim import world
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
-import bsk_rl, bsk_rl.actions as act
-print(bsk_rl.__version__)
-for name in ["Charge","Desat","Downlink","Image"]:
+import bsk_rl
+from bsk_rl import act
+
+for name in ["Charge","Desat","Image"]:
     print(name, hasattr(act, name))
 
 
@@ -68,27 +68,15 @@ def mrp_error_norm(sat):   #signma_B/R- norm of Modified Rodrigues Parameter (MR
     return(np.linalg.norm(sigma))
 
 def omega_norm(sat): # omega_B/N- norm of angular attitude rate vector
-    w = getattr(sat.dynamics, 'omega_BN_B', None)
-    if w is None:
-        w = sat.dynamics.omega_BN_H #fallback
-    return float(np.linalg.norm(w))
-
-# Data buffer storage helper
-def buffer_level(sat):      #Data buffer fill fraction in [0, 1]
-    cap = max(1.0, float(sat.data.capacity_bytes))
-    return float(sat.data.buffer_bytes) / cap
-
-def downlinked_this_step(sat): #Data downlinked this step, normalized by buffer capacity
-    cap = max(1.0, float(sat.data.capacity_bytes))
-    return float(getattr(sat.data, "downlinked_last_step_bytes", 0.0)) / cap
-
-
-
+   w = getattr(sat.dynamics, 'omega_BN_B', None)
+   if w is None:
+        w = sat.dynamics.omega_BH_H 
+   return float(np.linalg.norm(w))
 
 
 def power_sat_generator(n_ahead=5, include_time=False):
     class PowerSat(sats.ImagingSatellite):
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Downlink(), act.Desat()]
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),    #no error norm or rate norm
@@ -102,8 +90,8 @@ def power_sat_generator(n_ahead=5, include_time=False):
                 
                 dict(prop="mrp_error_norm", fn=mrp_error_norm, norm=0.1), #Attitude error norm
                 dict(prop="omega_norm",     fn=omega_norm,     norm=0.03), #Attitude rate norm
-                dict(prop="buffer_level",   fn=buffer_level),  #Data buffer level
-                dict(prop="downlink_amount", fn=downlinked_this_step), #Data downlinked this step (normalized by buffer capacity)
+                dict(prop="storage_level_fraction"),
+
             ),
             obs.OpportunityProperties(
                 dict(prop="priority"),
@@ -114,10 +102,8 @@ def power_sat_generator(n_ahead=5, include_time=False):
                 dict(prop="opportunity_close", norm=360.0),
                 type="target",
                 n_ahead_observe=n_ahead,
-                type="ground_station",
-                n_ahead_observe=1,
-
             ),
+
             obs.Eclipse(norm=5700),
             Density(intervals=20, norm=5),
         ]
@@ -157,15 +143,54 @@ SAT_ARGS_POWER.update(
         thrusterPowerDraw=-30,
         nHat_B=np.array([0, 0, -1]),
         wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),    
-        desatAttitude="nadir",      #A ground-station pass model and a Downlink mode that consumes buffer and returns reward when passes occur
+        #desatAttitude="sun_pointing",      #A ground-station pass model and a Downlink mode that consumes buffer and returns reward when passes occur
         storageInit=lambda: np.random.randint(0, int(0.01 * SAT_ARGS["dataStorageCapacity"])),
-        transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
-        transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
+        #transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
+        #transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
         maxWheelSpeed=1500.0,               # RPM
-
+        instrumentBaudRate = +5 * 8e6,   # bits/s produced while imaging (e.g., 5 MB/s)
+        basePowerDraw = -10.0,   # W always-on loads (negative = consumption)
+        panelArea     = 0.25,    # m^2 of solar array (tune as needed)
 
     )
 )
+
+class PiecewiseReward:
+    """
+    Reward:
+      - Terminal failure: -10 if battery empty OR any wheel >= max OR storage full
+      - If action == Image(c_j): +0.1 for first-time image of j
+      - Else: 0
+    """
+    def __init__(self, env):
+        self.env = env
+        self.imaged_once = set()       # target IDs imaged at least once
+        
+
+    def __call__(self, env, info):
+        sat = env.satellite
+
+        # ----- Failure checks (Eq. 4) -----
+        battery_empty = (sat.dynamics.battery_charge_fraction <= 0.0)
+        wheel_max = getattr(sat.dynamics, "maxWheelSpeed", 630.0)
+        wheels_over = any(abs(w) >= wheel_max for w in sat.dynamics.wheel_speeds[:3])
+
+        # storage_level_fraction is exposed by your SatProperties
+        storage_full = (getattr(sat, "storage_level_fraction", None) is not None
+                        and sat.storage_level_fraction >= 1.0)
+
+        if battery_empty or wheels_over or storage_full:
+            return -10.0
+
+        # ----- Action-dependent reward (Eq. 3) -----
+        a = info.get("action_name")  # SatelliteTasking typically fills this; if not, you can set it in a wrapper
+        r = 0.0
+        if a == "image":
+            tid = info.get("imaged_target_id")
+            if tid is not None and tid not in self.imaged_once:
+                r += 0.1
+                self.imaged_once.add(tid)
+        return r
 
 duration = 5700.0 * 3  # 3 orbits #5700 -> 95 minutes
 target_distribution = "uniform"
@@ -177,23 +202,22 @@ if target_distribution == "uniform":
 elif target_distribution == "cities":
     targets = scene.CityTargets(n_targets)
 
-
 def get_env():
     env = SatelliteTasking(
-        satellite=power_sat_generator(n_ahead=32, include_time=False)(
+        satellite=power_sat_generator(n_ahead=5, include_time=False)(
             name="EO1-power",
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
-        rewarder=data.UniqueImageReward(),      #Implement the piecewise reward with downlink-driven returns and 0.1 image bonus; wire in resource-failure terminal penalty and episode termination
+        rewarder=None,      #Implement the piecewise reward with downlink-driven returns and 0.1 image bonus; wire in resource-failure terminal penalty and episode termination
         sim_rate=0.5,   #change to 1?
         max_step_duration=360.0, #Updated from 300 to 360 to accomodate 6 minute steps
         time_limit=duration,
         failure_penalty=0.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
-        world_type=world.GroundStationWorldModel,
-        world_args=world.GroundStationWorldModel.default_world_args(),
+    
     )
+    env.rewarder = PiecewiseReward(env)
 
     return env
