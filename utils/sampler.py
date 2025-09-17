@@ -9,7 +9,7 @@ import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
 
-from get_env import get_env
+from utils.get_env import get_env
 from utils.functions import temp_seed
 
 today = date.today()
