@@ -2,17 +2,17 @@ import numpy as np
 from Basilisk.architecture import bskLogging
 from Basilisk.utilities import orbitalMotion
 
-from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
+from bsk_rl import SatelliteTasking, act, obs, sats, scene
 from bsk_rl.sim import fsw
 from bsk_rl.utils.orbital import random_orbit, rv2HN
-from bsk_rl.sim import world
+import bsk_rl.data as data
 
+n_ahead = 5
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
 import bsk_rl
-from bsk_rl import act
 
-for name in ["Charge","Desat","Downlink","Image"]:
+for name in ["Charge","Desat","Image"]:
     print(name, hasattr(act, name))
 
 
@@ -39,6 +39,8 @@ class Density(obs.Observation):       #custom Density bins (a forward-looking â€
             - self.satellite.window_calculation_time
         )
         soonest = self.satellite.upcoming_opportunities_dict(types="target")
+        if not soonest:
+            return np.zeros(self.intervals, dtype=float)
         rewards = np.array([opportunity.priority for opportunity in soonest])
         times = np.array([opportunities[0][1] for opportunities in soonest.values()])
         time_bins = np.floor((times - self.simulator.sim_time) / self.interval_duration)
@@ -47,7 +49,11 @@ class Density(obs.Observation):       #custom Density bins (a forward-looking â€
 
 
 def wheel_speed_3(sat):
-    return np.array(sat.dynamics.wheel_speeds[0:3]) / 630
+    d = sat.dynamics
+    max_rpm = float(getattr(d, "maxWheelSpeed", 5000.0))
+    ws = np.array(getattr(d, "wheel_speeds", [0.0, 0.0, 0.0]), dtype=float)[:3]
+    return ws / max_rpm
+
 
 
 def s_hat_H(sat):      #Sun direction not part of paper
@@ -64,32 +70,20 @@ def s_hat_H(sat):      #Sun direction not part of paper
     return r_SB_H / np.linalg.norm(r_SB_H)
 
 #Attitude helpers
-def mrp_error_norm(sat):   #signma_B/R- norm of Modified Rodrigues Parameter (MRP) attitude error
-    sigma = sat.fsw.attitude_error_mrp()
-    return(np.linalg.norm(sigma))
+#def mrp_error_norm(sat):   #signma_B/R- norm of Modified Rodrigues Parameter (MRP) attitude error
+    #sigma = sat.fsw.attitude_error_mrp()
+    #return(np.linalg.norm(sigma))
 
 def omega_norm(sat): # omega_B/N- norm of angular attitude rate vector
-   w = getattr(sat.dynamics, 'omega_BN_B', None)
-   if w is None:
+    w = getattr(sat.dynamics, 'omega_BN_B', None)
+    if w is None:
         w = sat.dynamics.omega_BH_H 
-   return float(np.linalg.norm(w))
-
-# Data buffer storage helper
-def buffer_level(sat):      #Data buffer fill fraction in [0, 1]
-    cap = max(1.0, float(sat.data.capacity_bytes))
-    return float(sat.data.buffer_bytes) / cap
-
-def downlinked_this_step(sat): #Data downlinked this step, normalized by buffer capacity
-    cap = max(1.0, float(sat.data.capacity_bytes))
-    return float(getattr(sat.data, "downlinked_last_step_bytes", 0.0)) / cap
+    return float(np.linalg.norm(w))
 
 
-
-
-
-def power_sat_generator(n_ahead=5, include_time=False):
+def power_sat_generator(n_ahead=n_ahead, include_time=False):
     class PowerSat(sats.ImagingSatellite):
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Downlink(), act.Desat()]
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),    #no error norm or rate norm
@@ -101,7 +95,7 @@ def power_sat_generator(n_ahead=5, include_time=False):
                 dict(prop="s_hat_H", fn=s_hat_H),
                 
                 
-                dict(prop="mrp_error_norm", fn=mrp_error_norm, norm=0.1), #Attitude error norm
+                #dict(prop="mrp_error_norm", fn=mrp_error_norm, norm=0.1), #Attitude error norm
                 dict(prop="omega_norm",     fn=omega_norm,     norm=0.03), #Attitude rate norm
                 dict(prop="storage_level_fraction"),
 
@@ -117,13 +111,6 @@ def power_sat_generator(n_ahead=5, include_time=False):
                 n_ahead_observe=n_ahead,
             ),
 
-            # Next ground-station pass (so the policy can time Downlink)
-            obs.OpportunityProperties(
-                dict(prop="opportunity_open",  norm=360.0),
-                dict(prop="opportunity_close", norm=360.0),
-                type="ground_station",
-                n_ahead_observe=1,
-            ),
             obs.Eclipse(norm=5700),
             Density(intervals=20, norm=5),
         ]
@@ -152,6 +139,9 @@ SAT_ARGS = dict(
     oe=lambda: random_orbit(alt=500),
 )
 
+MAX_WHEEL_RPM = 5000.0   # rated limit in RPM for your RW model
+INIT_FRAC = 0.05         # start wheels within Â±5% of max so episodes are stable
+
 SAT_ARGS_POWER = {}
 SAT_ARGS_POWER.update(SAT_ARGS)
 SAT_ARGS_POWER.update(
@@ -162,12 +152,12 @@ SAT_ARGS_POWER.update(
         instrumentPowerDraw=-10,
         thrusterPowerDraw=-30,
         nHat_B=np.array([0, 0, -1]),
-        wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),    
-        desatAttitude="sun_pointing",      #A ground-station pass model and a Downlink mode that consumes buffer and returns reward when passes occur
+        wheelSpeeds   = (lambda maxrpm=MAX_WHEEL_RPM, frac=INIT_FRAC:np.random.uniform(-frac*maxrpm, +frac*maxrpm, 3).astype(float)),
+        maxWheelSpeed=MAX_WHEEL_RPM,               # RPM- https://www.aac-clyde.space/what-we-do/space-products-components/adcs/rw400
+        desatAttitude="sun",      #A ground-station pass model and a Downlink mode that consumes buffer and returns reward when passes occur
         storageInit=lambda: np.random.randint(0, int(0.01 * SAT_ARGS["dataStorageCapacity"])),
-        transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
-        transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
-        maxWheelSpeed=1500.0,               # RPM
+        #transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
+        #transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
         instrumentBaudRate = +5 * 8e6,   # bits/s produced while imaging (e.g., 5 MB/s)
         basePowerDraw = -10.0,   # W always-on loads (negative = consumption)
         panelArea     = 0.25,    # m^2 of solar array (tune as needed)
@@ -175,57 +165,42 @@ SAT_ARGS_POWER.update(
     )
 )
 
-rewarder_image = data.UniqueImageReward(reward_fn=lambda priority: 0.1)
+class ImageDesatReward(data.UniqueImageReward):
+    
+    #+0.1 for the first image of each target (no repeats).
+    #Terminate episode on: battery empty OR any wheel >= max OR storage full. Env applies failure_penalty when termination triggers.
+    
+    def __init__(self):
+        super().__init__(reward_fn=lambda priority: 0.1)
+
+    def is_terminated(self, satellite) -> bool:
+        # Battery empty?
+        batt_empty = (satellite.dynamics.battery_charge_fraction <= 0.0)
+
+        # Wheel saturation (use configured limit; default to 5000 if missing)
+        limit = float(getattr(satellite.dynamics, "maxWheelSpeed", 5000.0))
+        guard = 0.9 * limit  # terminate before absolute max
+        ws = np.array(satellite.dynamics.wheel_speeds[:3], dtype=float)
+        wheels_over = bool(np.any(np.abs(ws) >= guard))
+
+        # Storage full (prefer normalized fraction if available)
+        lvl = getattr(satellite, "storage_level_fraction", None)
+        if lvl is not None:
+            storage_full = (lvl >= 1.0)
+        else:
+            msg = satellite.dynamics.storageUnit.storageUnitDataOutMsg.read()
+            used = float(getattr(msg, "storageLevel", 0.0))
+            cap  = float(getattr(msg, "storageCapacity", 1.0))
+            storage_full = (cap > 0 and used / cap >= 1.0)
+
+        return bool(batt_empty or wheels_over or storage_full)
 
 
-class PiecewiseDownlinkReward:
-    """
-    Reward:
-      - Terminal failure: -10 if battery empty OR any wheel >= max OR storage full
-      - If action == Downlink: sum (1/priority_j) for first-time downlinks this step
-      - If action == Image(c_j): +0.1 for first-time image of j
-      - Else: 0
-    """
-    def __init__(self, env):
-        self.env = env
-        self.imaged_once = set()       # target IDs imaged at least once
-        self.downlinked_once = set()   # target IDs ever delivered
 
-    def __call__(self, env, info):
-        sat = env.satellite
-
-        # ----- Failure checks (Eq. 4) -----
-        battery_empty = (sat.dynamics.battery_charge_fraction <= 0.0)
-        wheel_max = getattr(sat.dynamics, "maxWheelSpeed", 630.0)
-        wheels_over = any(abs(w) >= wheel_max for w in sat.dynamics.wheel_speeds[:3])
-
-        # storage_level_fraction is exposed by your SatProperties
-        storage_full = (getattr(sat, "storage_level_fraction", None) is not None
-                        and sat.storage_level_fraction >= 1.0)
-
-        if battery_empty or wheels_over or storage_full:
-            return -10.0
-
-        # ----- Action-dependent reward (Eq. 3) -----
-        a = info.get("action_name")  # SatelliteTasking typically fills this; if not, you can set it in a wrapper
-        r = 0.0
-        if a == "downlink":
-            # If your env provides a list of (target_id, priority) delivered this step, use it:
-            for tid, prio in info.get("downlinked_targets", []):
-                if tid not in self.downlinked_once:
-                    r += 1.0 / max(1.0, float(prio))
-                    self.downlinked_once.add(tid)
-        elif a == "image":
-            tid = info.get("imaged_target_id")
-            if tid is not None and tid not in self.imaged_once:
-                r += 0.1
-                self.imaged_once.add(tid)
-        return r
-
-duration = 5700.0 * 3  # 3 orbits #5700 -> 95 minutes
+duration = 5700.0 * 5  # 3 orbits #5700 -> 95 minutes
 target_distribution = "uniform"
-n_targets = 135 #135 targets for 3 orbits- but should we just keep 3000 if MJ is able to get good results with that?
-n_ahead = 5 # 5 n_ahead for 3 orbits - also should we keep 32 if MJ is able to get good results with that?
+n_targets = 3000 #135 targets for 3 orbits- but should we just keep 3000 if MJ is able to get good results with that?
+n_ahead = 32 # 5 n_ahead for 3 orbits - also should we keep 32 if MJ is able to get good results with that?
 
 if target_distribution == "uniform":
     targets = scene.UniformTargets(n_targets)
@@ -239,16 +214,16 @@ def get_env():
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
-        rewarder=None,      #Implement the piecewise reward with downlink-driven returns and 0.1 image bonus; wire in resource-failure terminal penalty and episode termination
+        rewarder=ImageDesatReward(),      #bsk_rl leveraged reward using unique-image bonus + resource-failure terminal penalty and episode termination
         sim_rate=0.5,   #change to 1?
         max_step_duration=360.0, #Updated from 300 to 360 to accomodate 6 minute steps
         time_limit=duration,
-        failure_penalty=0.0,
+        failure_penalty=-10.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
-        world_type=world.GroundStationWorldModel,
-        world_args=world.GroundStationWorldModel.default_world_args(),
+    
     )
-    env.rewarder = PiecewiseDownlinkReward(env)
 
     return env
+
+
