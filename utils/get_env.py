@@ -138,7 +138,7 @@ elif target_distribution == "cities":
 
 def get_env(env_name):
     if env_name == "basic":
-        resource_fn = lambda sat: sat.dynamics.dv_available  # or equivalent
+        resource_fn = lambda sat: sat.dynamics.battery_charge_fraction  # or equivalent
         reward_weight = 0.1  # is positive, because the fuel changes are negative
         rewarders = [
             data.UniqueImageReward(),
