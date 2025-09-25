@@ -126,7 +126,7 @@ SAT_ARGS_POWER.update(
 )
 
 duration = 5700.0 * 5  # 5 orbits
-target_distribution = "cities"
+target_distribution = "uniform"
 n_targets = 3000
 n_ahead = 32
 
@@ -138,12 +138,7 @@ elif target_distribution == "cities":
 
 def get_env(env_name):
     if env_name == "basic":
-        resource_fn = lambda sat: sat.dynamics.dv_available  # or equivalent
-        reward_weight = 0.1  # is positive, because the fuel changes are negative
-        rewarders = [
-            data.UniqueImageReward(),
-            data.ResourceReward(reward_weight=reward_weight, resource_fn=resource_fn),
-        ]
+        rewarders = [data.UniqueImageReward()]
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
