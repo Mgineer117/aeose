@@ -67,8 +67,8 @@ class TerminationGuard(GlobalReward):
         return False
 
 
-def wheel_speed_3(sat):
-    return np.array(sat.dynamics.wheel_speeds[0:3]) / 630
+# def wheel_speed_3(sat):
+#     return np.array(sat.dynamics.wheel_speeds[0:3]) / 630
 
 
 def s_hat_H(sat):
@@ -87,7 +87,7 @@ def s_hat_H(sat):
 
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),
@@ -95,7 +95,10 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
                 dict(prop="v_BN_P", norm=7616.5),
                 dict(prop="battery_charge_fraction"),
-                dict(prop="wheel_speed_3", fn=wheel_speed_3),
+                # dict(prop="wheel_speed_3", fn=wheel_speed_3),
+                dict(
+                    prop="wheel_speeds_fraction"
+                ),  # wheel speeds normalized by max to help with wheel desat action
                 dict(prop="s_hat_H", fn=s_hat_H),
             ),
             obs.OpportunityProperties(
@@ -146,8 +149,15 @@ SAT_ARGS_POWER.update(
         instrumentPowerDraw=-10,
         thrusterPowerDraw=-30,
         nHat_B=np.array([0, 0, -1]),
+        maxWheelSpeed=6000.0,  # ~630 rad/s defining max wheel speed to help with wheel_speeds_fraction observation #https://www.aac-clyde.space/what-we-do/space-products-components/adcs/rw400
         wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),
         desatAttitude="nadir",
+        storageInit=lambda: np.random.randint(
+            0, int(0.01 * SAT_ARGS["dataStorageCapacity"])
+        ),
+        instrumentBaudRate=+5 * 8e6,  # bits/s produced while imaging (e.g., 5 MB/s)
+        basePowerDraw=-10.0,  # W always-on loads (negative = consumption)
+        panelArea=0.25,  # m^2 of solar array (tune as needed)
     )
 )
 
