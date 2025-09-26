@@ -202,7 +202,7 @@ SAT_ARGS_POWER.update(
 )
 
 duration = 5700.0 * 5  # 5 orbits
-target_distribution = "uniform"
+target_distribution = "cities"
 n_targets = 3000
 n_ahead = 32
 
