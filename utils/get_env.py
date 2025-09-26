@@ -87,10 +87,12 @@ class NoReward(GlobalReward):
 
 
 class TerminationGuard(GlobalReward):
-    # Adds failure/termination only; contributes zero reward
-    data_store_type = (
-        UniqueImageReward.data_store_type
-    )  # any store type works; we don't use new data
+    # # Adds failure/termination only; contributes zero reward
+    # data_store_type = (
+    #     UniqueImageReward.data_store_type
+    # )  # any store type works; we don't use new data
+
+    data_store_type = NoDataStore
 
     def __init__(self, *args, **kwargs):
         return super().__init__(*args, **kwargs)
@@ -220,7 +222,7 @@ elif target_distribution == "cities":
 
 def get_env(env_name):
     if env_name == "basic":
-        rewarders = [data.UniqueImageReward(), NoReward()]
+        rewarders = [data.UniqueImageReward(), TerminationGuard()]
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
