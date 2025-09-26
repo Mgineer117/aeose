@@ -9,7 +9,6 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
 from bsk_rl.data.base import Data, DataStore, GlobalReward
-from bsk_rl.data.unique_image_data import UniqueImageReward
 
 
 class Density(obs.Observation):
@@ -40,28 +39,6 @@ class Density(obs.Observation):
         time_bins = np.floor((times - self.simulator.sim_time) / self.interval_duration)
         densities = [sum(rewards[time_bins == i]) for i in range(self.intervals)]
         return np.array(densities) / self.norm
-
-
-class TerminationGuard(GlobalReward):
-    # Adds failure/termination only; contributes zero reward
-    data_store_type = (
-        UniqueImageReward.data_store_type
-    )  # any store type works; we don't use new data
-
-    def calculate_reward(self, new_data_dict):
-        # No reward contribution; leave imaging reward to UniqueImageReward
-        return {sat_id: 0.0 for sat_id in new_data_dict.keys()}
-
-    def is_terminated(self, satellite) -> bool:
-        dyn = satellite.dynamics
-        if hasattr(dyn, "battery_valid") and not dyn.battery_valid():
-            return True
-        if hasattr(dyn, "rw_speeds_valid") and not dyn.rw_speeds_valid():
-            return True
-        frac = getattr(dyn, "storage_level_fraction", None)
-        if frac is not None and frac >= 0.98:
-            return True
-        return False
 
 
 def wheel_speed_3(sat):
@@ -161,7 +138,12 @@ elif target_distribution == "cities":
 
 def get_env(env_name):
     if env_name == "basic":
-        rewarders = [data.UniqueImageReward(), TerminationGuard()]
+        resource_fn = lambda sat: sat.dynamics.battery_charge_fraction  # or equivalent
+        reward_weight = 1e-1
+        rewarders = [
+            data.UniqueImageReward(),
+            data.ResourceReward(reward_weight=reward_weight, resource_fn=resource_fn),
+        ]
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
@@ -175,7 +157,7 @@ def get_env(env_name):
         sim_rate=0.5,
         max_step_duration=300.0,
         time_limit=duration,
-        failure_penalty=-10.0,
+        failure_penalty=0.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
     )
