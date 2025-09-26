@@ -87,11 +87,6 @@ class NoReward(GlobalReward):
 
 
 class TerminationGuard(GlobalReward):
-    # # Adds failure/termination only; contributes zero reward
-    # data_store_type = (
-    #     UniqueImageReward.data_store_type
-    # )  # any store type works; we don't use new data
-
     data_store_type = NoDataStore
 
     def __init__(self, *args, **kwargs):
@@ -101,16 +96,16 @@ class TerminationGuard(GlobalReward):
         # No reward contribution; leave imaging reward to UniqueImageReward
         return {sat_id: 0.0 for sat_id in new_data_dict.keys()}
 
-    # def is_terminated(self, satellite) -> bool:
-    #     dyn = satellite.dynamics
-    #     if hasattr(dyn, "battery_valid") and not dyn.battery_valid():
-    #         return True
-    #     if hasattr(dyn, "rw_speeds_valid") and not dyn.rw_speeds_valid():
-    #         return True
-    #     frac = getattr(dyn, "storage_level_fraction", None)
-    #     if frac is not None and frac >= 0.98:
-    #         return True
-    #     return False
+    def is_terminated(self, satellite) -> bool:
+        dyn = satellite.dynamics
+        if hasattr(dyn, "battery_valid") and not dyn.battery_valid():
+            return True
+        if hasattr(dyn, "rw_speeds_valid") and not dyn.rw_speeds_valid():
+            return True
+        frac = getattr(dyn, "storage_level_fraction", None)
+        if frac is not None and frac >= 0.98:
+            return True
+        return False
 
 
 # def wheel_speed_3(sat):
