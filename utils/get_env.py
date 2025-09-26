@@ -176,7 +176,7 @@ elif target_distribution == "cities":
 
 def get_env(env_name):
     if env_name == "basic":
-        rewarders = [data.UniqueImageReward()]
+        rewarders = [data.UniqueImageReward(), TerminationGuard()]
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
