@@ -155,6 +155,8 @@ SAT_ARGS_POWER.update(
         storageInit=lambda: np.random.randint(
             0, int(0.01 * SAT_ARGS["dataStorageCapacity"])
         ),
+        # transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
+        # transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
         instrumentBaudRate=+5 * 8e6,  # bits/s produced while imaging (e.g., 5 MB/s)
         basePowerDraw=-10.0,  # W always-on loads (negative = consumption)
         panelArea=0.25,  # m^2 of solar array (tune as needed)
@@ -174,7 +176,7 @@ elif target_distribution == "cities":
 
 def get_env(env_name):
     if env_name == "basic":
-        rewarders = [data.UniqueImageReward(), TerminationGuard()]
+        rewarders = [data.UniqueImageReward()]
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
