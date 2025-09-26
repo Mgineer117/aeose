@@ -55,16 +55,16 @@ class TerminationGuard(GlobalReward):
         # No reward contribution; leave imaging reward to UniqueImageReward
         return {sat_id: 0.0 for sat_id in new_data_dict.keys()}
 
-    def is_terminated(self, satellite) -> bool:
-        dyn = satellite.dynamics
-        if hasattr(dyn, "battery_valid") and not dyn.battery_valid():
-            return True
-        if hasattr(dyn, "rw_speeds_valid") and not dyn.rw_speeds_valid():
-            return True
-        frac = getattr(dyn, "storage_level_fraction", None)
-        if frac is not None and frac >= 0.98:
-            return True
-        return False
+    # def is_terminated(self, satellite) -> bool:
+    #     dyn = satellite.dynamics
+    #     if hasattr(dyn, "battery_valid") and not dyn.battery_valid():
+    #         return True
+    #     if hasattr(dyn, "rw_speeds_valid") and not dyn.rw_speeds_valid():
+    #         return True
+    #     frac = getattr(dyn, "storage_level_fraction", None)
+    #     if frac is not None and frac >= 0.98:
+    #         return True
+    #     return False
 
 
 # def wheel_speed_3(sat):
