@@ -48,6 +48,9 @@ class TerminationGuard(GlobalReward):
         UniqueImageReward.data_store_type
     )  # any store type works; we don't use new data
 
+    def __init__(self, *args, **kwargs):
+        return super().__init__(*args, **kwargs)
+
     def calculate_reward(self, new_data_dict):
         # No reward contribution; leave imaging reward to UniqueImageReward
         return {sat_id: 0.0 for sat_id in new_data_dict.keys()}
@@ -149,7 +152,7 @@ SAT_ARGS_POWER.update(
 )
 
 duration = 5700.0 * 5  # 5 orbits
-target_distribution = "cities"
+target_distribution = "uniform"
 n_targets = 3000
 n_ahead = 32
 
