@@ -41,7 +41,7 @@ def get_args():
         "--actor-lr", type=float, default=5e-5, help="Base learning rate."
     )
     parser.add_argument(
-        "--critic-lr", type=float, default=1e-4, help="Base learning rate."
+        "--critic-lr", type=float, default=5e-5, help="Base learning rate."
     )
     parser.add_argument(
         "--eps-clip", type=float, default=0.2, help="Base learning rate."
