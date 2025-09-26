@@ -126,9 +126,9 @@ def s_hat_H(sat):
     return r_SB_H / np.linalg.norm(r_SB_H)
 
 
-def power_sat_generator(n_ahead=32, include_time=False):
+def power_sat_generator(action_specs: list, n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
+        action_spec = action_specs
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),
@@ -136,7 +136,6 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
                 dict(prop="v_BN_P", norm=7616.5),
                 dict(prop="battery_charge_fraction"),
-                # dict(prop="wheel_speed_3", fn=wheel_speed_3),
                 dict(
                     prop="wheel_speeds_fraction"
                 ),  # wheel speeds normalized by max to help with wheel desat action
@@ -196,8 +195,6 @@ SAT_ARGS_POWER.update(
         storageInit=lambda: np.random.randint(
             0, int(0.01 * SAT_ARGS["dataStorageCapacity"])
         ),
-        # transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
-        # transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
         instrumentBaudRate=+5 * 8e6,  # bits/s produced while imaging (e.g., 5 MB/s)
         basePowerDraw=-10.0,  # W always-on loads (negative = consumption)
         panelArea=0.25,  # m^2 of solar array (tune as needed)
@@ -217,12 +214,26 @@ elif target_distribution == "cities":
 
 def get_env(env_name):
     if env_name == "basic":
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
+        rewarders = [data.UniqueImageReward()]
+    elif env_name == "resource":
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
+        resource_fn = lambda sat: sat.dynamics.battery_charge_fraction  # or equivalent
+        reward_weight = 1e-1
+        rewarders = [
+            data.UniqueImageReward(),
+            data.ResourceReward(reward_weight=reward_weight, resource_fn=resource_fn),
+        ]
+    elif env_name == "desat":
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
         rewarders = [data.UniqueImageReward(), TerminationGuard()]
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
     env = SatelliteTasking(
-        satellite=power_sat_generator(n_ahead=32, include_time=False)(
+        satellite=power_sat_generator(
+            action_specs=action_spec, n_ahead=32, include_time=False
+        )(
             name="EO1-power",
             sat_args=SAT_ARGS_POWER,
         ),

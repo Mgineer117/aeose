@@ -19,15 +19,15 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 4 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 8 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 16 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 8 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 16 & 
 CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 32 & 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeose --actor-fc-dim 64 & 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeose --actor-fc-dim 128 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 64 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 128 & 
 CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeose --actor-fc-dim 256 & 
+CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeose --actor-fc-dim 512 & 
+CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeose --actor-fc-dim 1024 & 
 
 # === Wait for all background jobs to finish ===
 wait
