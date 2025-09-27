@@ -3,12 +3,13 @@ from Basilisk.architecture import bskLogging
 from Basilisk.utilities import orbitalMotion
 
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
-from bsk_rl.sim import fsw
+from bsk_rl.sim import fsw, world
 from bsk_rl.utils.orbital import random_orbit, rv2HN
+
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
-from bsk_rl.data.base import GlobalReward, DataStore, NoDataStore
+from bsk_rl.data.base import GlobalReward, NoDataStore
 from bsk_rl.data.unique_image_data import UniqueImageReward
 
 
@@ -62,7 +63,7 @@ def s_hat_H(sat):
 
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()] #included Desat action
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat(), act.Downlink()] #included Desat and downlink action
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),
@@ -73,7 +74,9 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 #dict(prop="wheel_speed_3", fn=wheel_speed_3), #removed to use in-built wheel_speeds_fraction observation instead to help with wheel desat action
                 dict(prop="wheel_speeds_fraction"), # wheel speeds normalized by max to help with wheel desat action
                 dict(prop="s_hat_H", fn=s_hat_H),
+                dict(prop="data_buffer_fraction"), # Added for downlink awareness
             ),
+
             obs.OpportunityProperties(
                 dict(prop="priority"),
                 dict(prop="r_LB_H", norm=800 * 1e3),
@@ -82,6 +85,14 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 dict(prop="opportunity_open", norm=300.0),
                 dict(prop="opportunity_close", norm=300.0),
                 type="target",
+                n_ahead_observe=n_ahead,
+            ),
+
+            # Ground station opportunities for downlink
+            obs.OpportunityProperties(
+                dict(prop="opportunity_open", norm=300.0),
+                dict(prop="opportunity_close", norm=300.0),
+                type="ground_station",
                 n_ahead_observe=n_ahead,
             ),
             obs.Eclipse(norm=5700),
@@ -122,20 +133,68 @@ SAT_ARGS_POWER.update(
         instrumentPowerDraw=-10,
         thrusterPowerDraw=-30,
         nHat_B=np.array([0, 0, -1]),
-        
+
         maxWheelSpeed=6000.0, # ~630 rad/s defining max wheel speed to help with wheel_speeds_fraction observation #https://www.aac-clyde.space/what-we-do/space-products-components/adcs/rw400 
         wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),
         desatAttitude="nadir",
         
         storageInit=lambda: np.random.randint(0, int(0.01 * SAT_ARGS["dataStorageCapacity"])),
-        #transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
-        #transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
-        instrumentBaudRate =+5 * 8e6,   # bits/s produced while imaging (e.g., 5 MB/s)
-        basePowerDraw =-10.0,   # W always-on loads (negative = consumption)
-        panelArea     =0.25,    # m^2 of solar array (tune as needed)
+        transmitterBaudRate=- 50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
+        transmitterPowerDraw=- 25.0,         # W       (power draw while Downlinking
+        instrumentBaudRate = 5 * 8e6,   # bits/s produced while imaging (e.g., 5 MB/s)
+        basePowerDraw = -10.0,   # W always-on loads (negative = consumption)
+        panelArea     = 0.25,    # m^2 of solar array (tune as needed)
     )
 )
 
+class DownlinkReward(GlobalReward):
+    def __init__(self, data_value_per_bit=1e-6, storage_penalty_threshold=0.95, opp_type="ground_station"):
+        super().__init__()
+        self.data_value_per_bit = data_value_per_bit
+        self.storage_penalty_threshold = storage_penalty_threshold
+        self.previous_storage = {}
+        self.opp_type = opp_type
+
+    def _in_downlink(self, sat):
+        # true if a GS contact is open "now"
+        try:
+            windows = sat.current_opportunities(types=self.opp_type)
+            return bool(windows)
+        except Exception:
+            return False
+
+    def _get_storage(self, dyn):
+        # survive minor naming differences across bsk_rl versions
+        for name in ("storage_level", "data_storage_level", "buffer_level"):
+            if hasattr(dyn, name):
+                return getattr(dyn, name)
+        return 0.0
+
+    def _get_storage_frac(self, dyn):
+        for name in ("storage_level_fraction", "data_buffer_fraction", "buffer_fraction"):
+            if hasattr(dyn, name):
+                return getattr(dyn, name)
+        return 0.0
+
+    def calculate_reward(self, new_data_dict):
+        rewards = {}
+        for sat_id in self.simulator.satellites.keys():
+            sat = self.simulator.satellites[sat_id]
+            dyn = sat.dynamics
+            current_storage = self._get_storage(dyn)
+            current_frac    = self._get_storage_frac(dyn)
+
+            r = 0.0
+            if sat_id in self.previous_storage and self._in_downlink(sat):
+                data_downlinked = max(0.0, self.previous_storage[sat_id] - current_storage)
+                r += data_downlinked * self.data_value_per_bit
+
+            if current_frac > self.storage_penalty_threshold:
+                r -= 5.0 * (current_frac - self.storage_penalty_threshold)
+
+            self.previous_storage[sat_id] = current_storage
+            rewards[sat_id] = r
+        return rewards
 
 class TerminationGuard(GlobalReward):
     #Adds failure/termination only; contributes zero reward
@@ -174,13 +233,15 @@ def get_env():
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
-        rewarder=(data.UniqueImageReward(), TerminationGuard()),
+        rewarder=(UniqueImageReward(), DownlinkReward(data_value_per_bit=1e-6), TerminationGuard()),
         sim_rate=0.5,
         max_step_duration=300.0,
         time_limit=duration,
         failure_penalty=-10.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
+        world_type=world.GroundStationWorldModel,  # Verified from cloud environment example
+        world_args=world.GroundStationWorldModel.default_world_args(),  # Verified from cloud environment example
     )
 
     return env
