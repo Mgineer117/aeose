@@ -74,7 +74,7 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 #dict(prop="wheel_speed_3", fn=wheel_speed_3), #removed to use in-built wheel_speeds_fraction observation instead to help with wheel desat action
                 dict(prop="wheel_speeds_fraction"), # wheel speeds normalized by max to help with wheel desat action
                 dict(prop="s_hat_H", fn=s_hat_H),
-                dict(prop="data_buffer_fraction"), # Added for downlink awareness
+                dict(prop="storage_level_fraction"), # Added for downlink awareness
             ),
 
             obs.OpportunityProperties(
@@ -164,17 +164,11 @@ class DownlinkReward(GlobalReward):
             return False
 
     def _get_storage(self, dyn):
-        # survive minor naming differences across bsk_rl versions
-        for name in ("storage_level", "data_storage_level", "buffer_level"):
-            if hasattr(dyn, name):
-                return getattr(dyn, name)
-        return 0.0
+        return dyn.storage_level
 
     def _get_storage_frac(self, dyn):
-        for name in ("storage_level_fraction", "data_buffer_fraction", "buffer_fraction"):
-            if hasattr(dyn, name):
-                return getattr(dyn, name)
-        return 0.0
+        return dyn.storage_level_fraction
+
 
     def calculate_reward(self, new_data_dict):
         rewards = {}
