@@ -250,7 +250,7 @@ def get_env():
         failure_penalty=-10.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
-        world_type=world.GroundStationWorldModel,  # Verified from cloud environment example
+        world_type=world.GroundStationWorldModel,  # Verified from cloud environment example, internally configures to use GS contacts with visible windows 
         world_args=world.GroundStationWorldModel.default_world_args(),  # Verified from cloud environment example
     )
 
