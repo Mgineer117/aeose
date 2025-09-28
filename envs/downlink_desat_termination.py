@@ -3,7 +3,7 @@ from Basilisk.architecture import bskLogging
 from Basilisk.utilities import orbitalMotion
 
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
-from bsk_rl.sim import fsw, world
+from bsk_rl.sim import fsw, world #Imported `world` and configured the simulator to use GroundStationWorldModel with default args so GS contact windows are actually generated and visible
 from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 
@@ -74,7 +74,7 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 #dict(prop="wheel_speed_3", fn=wheel_speed_3), #removed to use in-built wheel_speeds_fraction observation instead to help with wheel desat action
                 dict(prop="wheel_speeds_fraction"), # wheel speeds normalized by max to help with wheel desat action
                 dict(prop="s_hat_H", fn=s_hat_H),
-                dict(prop="storage_level_fraction"), # Added for downlink awareness
+                dict(prop="storage_level_fraction"), # Added to expose the payload data buffer fill level (0..1). This lets the agent learn to prioritize downlink when the buffer is getting full
             ),
 
             obs.OpportunityProperties(
@@ -88,7 +88,7 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 n_ahead_observe=n_ahead,
             ),
 
-            # Ground station opportunities for downlink
+            # Added another `OpportunityProperties(...)` block with `type="ground_station"` so the agent sees n-ahead open/close times for upcoming GS passes (timing the downlink action).
             obs.OpportunityProperties(
                 dict(prop="opportunity_open", norm=300.0),
                 dict(prop="opportunity_close", norm=300.0),
@@ -143,33 +143,44 @@ SAT_ARGS_POWER.update(
         transmitterPowerDraw=- 25.0,         # W       (power draw while Downlinking
         instrumentBaudRate = 5 * 8e6,   # bits/s produced while imaging (e.g., 5 MB/s)
         basePowerDraw = -10.0,   # W always-on loads (negative = consumption)
-        panelArea     = 0.25,    # m^2 of solar array (tune as needed)
+        panelArea     = 0.25,    # m^2 of solar array
     )
 )
+#Tracks storage between steps and rewards decreases (bits successfully downlinked) * data_value_per_bit
+#Adds a soft penalty when the buffer fraction exceeds a threshold (discourages running with a nearly-full buffer)
 
 class DownlinkReward(GlobalReward):
     def __init__(self, data_value_per_bit=1e-6, storage_penalty_threshold=0.95, opp_type="ground_station"):
         super().__init__()
+        #Monetary/value weight for each bit delivered. Tune to balance against imaging reward magnitudes
         self.data_value_per_bit = data_value_per_bit
+        # Begin penalizing once the buffer fraction exceeds this threshold (dimensionless in 0..1)
         self.storage_penalty_threshold = storage_penalty_threshold
+        # Per-satellite memory of last-step buffer fill (absolute bits). Used to compute deltas
         self.previous_storage = {}
+        # Opportunity stream name to treat as "downlink" (above as "ground_station")
         self.opp_type = opp_type
 
     def _in_downlink(self, sat):
         # true if a GS contact is open "now"
+        # We only want to credit data that was sent during a real contact, not incidental buffer drops (e.g., manual resets or bookkeeping)
         try:
             windows = sat.current_opportunities(types=self.opp_type)
             return bool(windows)
         except Exception:
             return False
 
+    #Absolute buffer fill in *bits* (float). Provided by ImagingDynModel. Used to compute how many bits left the buffer this step
     def _get_storage(self, dyn):
         return dyn.storage_level
 
+    #Normalized buffer fill in [0, 1]. Used for 'near-saturation' penalty shaping
     def _get_storage_frac(self, dyn):
         return dyn.storage_level_fraction
 
-
+    #Compute reward for each satellite for this step
+    #We iterate over all satellites every step so this reward always returns a complete mapping and doesn’t silently no-op
+    #"Data delivered" = max(0, prev_storage - current_storage) when a GS contact is open
     def calculate_reward(self, new_data_dict):
         rewards = {}
         for sat_id in self.simulator.satellites.keys():
@@ -179,14 +190,19 @@ class DownlinkReward(GlobalReward):
             current_frac    = self._get_storage_frac(dyn)
 
             r = 0.0
+            #Credit net bits downlinked this step, but only if a GS window is open now
             if sat_id in self.previous_storage and self._in_downlink(sat):
+                # If imaging is active, prev - current may be smaller (or zero) — that's expected
                 data_downlinked = max(0.0, self.previous_storage[sat_id] - current_storage)
                 r += data_downlinked * self.data_value_per_bit
 
+            # Soft penalty for carrying a near-full buffer (encourages timely downlinks)
             if current_frac > self.storage_penalty_threshold:
                 r -= 5.0 * (current_frac - self.storage_penalty_threshold)
 
+            # Update memory for next step’s delta computation
             self.previous_storage[sat_id] = current_storage
+            # Record per-satellite reward
             rewards[sat_id] = r
         return rewards
 
