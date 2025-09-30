@@ -106,6 +106,8 @@ def get_args():
 
     args = parser.parse_args()
     args.device = select_device(args.gpu_idx)
+    args.str_actor_fc_dim = str(tuple(args.actor_fc_dim))
+    args.str_target_actor_fc_dim = str(tuple(args.target_actor_fc_dim))
 
     return args
 

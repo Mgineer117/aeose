@@ -3,8 +3,8 @@
 #SBATCH --account=huytran1-ic
 #SBATCH --partition=csl
 #SBATCH --nodes=1
-#SBATCH --ntasks=9
-#SBATCH --cpus-per-task=6
+#SBATCH --ntasks=12
+#SBATCH --cpus-per-task=5
 #SBATCH --gres=gpu:1
 #SBATCH --time=7-00:00:00
 #SBATCH --output=aeose.o%j
@@ -19,18 +19,18 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 1 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 2 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 3 --env-name resource & 
-
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 8 --seed 1 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 8 --seed 2 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 8 --seed 3 --env-name resource & 
-
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 32 --seed 1 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 32 --seed 2 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 32 --seed 3 --env-name resource &   
-
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 1 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 4 --seed 1 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 8 --seed 1 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 1 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 2 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 3 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 1 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 2 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 3 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 1 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 2 --env-name desat & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 3 --env-name desat &
 
 # === Wait for all background jobs to finish ===
 wait
