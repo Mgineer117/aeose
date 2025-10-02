@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=12
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --gres=gpu:1
 #SBATCH --time=7-00:00:00
 #SBATCH --output=aeose.o%j
