@@ -141,18 +141,16 @@ class DownlinkReward(GlobalReward):
     # "Data delivered" = max(0, prev_storage - current_storage) when a GS contact is open
     def calculate_reward(self, new_data_dict):
         rewards = {}
-        for sat_id in self.simulator.satellites.keys():
-            sat = self.simulator.satellites[sat_id]
+
+        for sat in new_data_dict.keys():
             current_storage = sat.dynamics.storage_level
             current_frac = sat.dynamics.storage_level_fraction
 
             r = 0.0
             # Credit net bits downlinked this step, but only if a GS window is open now
-            if sat_id in self.previous_storage and self._in_downlink(sat):
+            if sat in self.previous_storage and self._in_downlink(sat):
                 # If imaging is active, prev - current may be smaller (or zero) — that's expected
-                data_downlinked = max(
-                    0.0, self.previous_storage[sat_id] - current_storage
-                )
+                data_downlinked = max(0.0, self.previous_storage[sat] - current_storage)
                 r += data_downlinked * self.data_value_per_bit
 
             # Soft penalty for carrying a near-full buffer (encourages timely downlinks)
@@ -160,9 +158,9 @@ class DownlinkReward(GlobalReward):
                 r -= 5.0 * (current_frac - self.storage_penalty_threshold)
 
             # Update memory for next step’s delta computation
-            self.previous_storage[sat_id] = current_storage
+            self.previous_storage[sat] = current_storage
             # Record per-satellite reward
-            rewards[sat_id] = r
+            rewards[sat] = r
         return rewards
 
 
