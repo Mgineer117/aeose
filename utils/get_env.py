@@ -143,6 +143,7 @@ class DownlinkReward(GlobalReward):
         rewards = {}
 
         for sat_id, sat in new_data_dict.items():
+            print(sat_id, sat)
             print(sat.__dict__)
             current_storage = sat.dynamics.storage_level
             current_frac = sat.dynamics.storage_level_fraction
