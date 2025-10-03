@@ -141,6 +141,7 @@ class DownlinkReward(GlobalReward):
     # "Data delivered" = max(0, prev_storage - current_storage) when a GS contact is open
     def calculate_reward(self, new_data_dict):
         rewards = {}
+        print(self)
         print(self.__dict__)
         for sat_id, sat in new_data_dict.items():
             print(sat_id, sat)
