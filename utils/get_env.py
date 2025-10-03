@@ -141,11 +141,8 @@ class DownlinkReward(GlobalReward):
     # "Data delivered" = max(0, prev_storage - current_storage) when a GS contact is open
     def calculate_reward(self, new_data_dict):
         rewards = {}
-        print(self.__dict__)
-        print(new_data_dict)
 
-        for sat_id in new_data_dict.keys():
-            sat = self.satellites[sat_id]
+        for sat_id, sat in new_data_dict.items():
             current_storage = sat.dynamics.storage_level
             current_frac = sat.dynamics.storage_level_fraction
 
