@@ -109,6 +109,8 @@ class TerminationGuard(GlobalReward):
 
 
 class DownlinkReward(GlobalReward):
+    data_store_type = NoDataStore
+
     def __init__(
         self,
         data_value_per_bit=1e-6,
