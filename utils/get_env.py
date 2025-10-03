@@ -142,6 +142,7 @@ class DownlinkReward(GlobalReward):
     def calculate_reward(self, new_data_dict):
         rewards = {}
         print(self.__dict__)
+        print(new_data_dict)
 
         for sat_id in new_data_dict.keys():
             sat = self.satellites[sat_id]
