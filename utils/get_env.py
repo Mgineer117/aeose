@@ -108,8 +108,60 @@ class TerminationGuard(GlobalReward):
         return False
 
 
-# def wheel_speed_3(sat):
-#     return np.array(sat.dynamics.wheel_speeds[0:3]) / 630
+class DownlinkReward(GlobalReward):
+    def __init__(
+        self,
+        data_value_per_bit=1e-6,
+        storage_penalty_threshold=0.95,
+        opp_type="ground_station",
+    ):
+        super().__init__()
+        # Monetary/value weight for each bit delivered. Tune to balance against imaging reward magnitudes
+        self.data_value_per_bit = data_value_per_bit
+        # Begin penalizing once the buffer fraction exceeds this threshold (dimensionless in 0..1)
+        self.storage_penalty_threshold = storage_penalty_threshold
+        # Per-satellite memory of last-step buffer fill (absolute bits). Used to compute deltas
+        self.previous_storage = {}
+        # Opportunity stream name to treat as "downlink" (above as "ground_station")
+        self.opp_type = opp_type
+
+    def _in_downlink(self, sat):
+        # true if a GS contact is open "now"
+        # We only want to credit data that was sent during a real contact, not incidental buffer drops (e.g., manual resets or bookkeeping)
+        try:
+            windows = sat.current_opportunities(types=self.opp_type)
+            return bool(windows)
+        except Exception:
+            return False
+
+    # Compute reward for each satellite for this step
+    # We iterate over all satellites every step so this reward always returns a complete mapping and doesn’t silently no-op
+    # "Data delivered" = max(0, prev_storage - current_storage) when a GS contact is open
+    def calculate_reward(self, new_data_dict):
+        rewards = {}
+        for sat_id in self.simulator.satellites.keys():
+            sat = self.simulator.satellites[sat_id]
+            current_storage = sat.dynamics.storage_level
+            current_frac = sat.dynamics.storage_level_fraction
+
+            r = 0.0
+            # Credit net bits downlinked this step, but only if a GS window is open now
+            if sat_id in self.previous_storage and self._in_downlink(sat):
+                # If imaging is active, prev - current may be smaller (or zero) — that's expected
+                data_downlinked = max(
+                    0.0, self.previous_storage[sat_id] - current_storage
+                )
+                r += data_downlinked * self.data_value_per_bit
+
+            # Soft penalty for carrying a near-full buffer (encourages timely downlinks)
+            if current_frac > self.storage_penalty_threshold:
+                r -= 5.0 * (current_frac - self.storage_penalty_threshold)
+
+            # Update memory for next step’s delta computation
+            self.previous_storage[sat_id] = current_storage
+            # Record per-satellite reward
+            rewards[sat_id] = r
+        return rewards
 
 
 def s_hat_H(sat):
@@ -227,6 +279,13 @@ def get_env(env_name):
     elif env_name == "desat":
         action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
         rewarders = [data.UniqueImageReward(), TerminationGuard()]
+    elif env_name == "downlink":
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
+        rewarders = [
+            data.UniqueImageReward(),
+            DownlinkReward(data_value_per_bit=1e-6),
+            TerminationGuard(),
+        ]
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
