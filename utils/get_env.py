@@ -9,6 +9,8 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
 from bsk_rl.data.base import Data, DataStore, GlobalReward
+from bsk_rl.data.resource_data import ResourceDataStore
+
 from bsk_rl.data.unique_image_data import UniqueImageReward, UniqueImageStore
 
 
@@ -109,7 +111,7 @@ class TerminationGuard(GlobalReward):
 
 
 class DownlinkReward(GlobalReward):
-    data_store_type = UniqueImageStore
+    data_store_type = ResourceDataStore
 
     def __init__(
         self,
