@@ -9,7 +9,7 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
 from bsk_rl.data.base import Data, DataStore, GlobalReward
-from bsk_rl.data.unique_image_data import UniqueImageReward
+from bsk_rl.data.unique_image_data import UniqueImageReward, UniqueImageStore
 
 
 class Density(obs.Observation):
@@ -109,7 +109,7 @@ class TerminationGuard(GlobalReward):
 
 
 class DownlinkReward(GlobalReward):
-    data_store_type = NoDataStore
+    data_store_type = UniqueImageStore
 
     def __init__(
         self,
