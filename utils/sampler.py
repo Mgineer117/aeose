@@ -31,7 +31,7 @@ class Base:
         The remainder of zero arrays will be cut in the end.
         np.nan makes it easy to debug
         """
-        batch_size = 2 * self.episode_len
+        batch_size = (self.num_episodes_per_worker + 1) * self.episode_len
         data = dict(
             states=np.full(((batch_size,) + self.state_dim), np.nan, dtype=np.float32),
             next_states=np.full(
@@ -80,7 +80,11 @@ class OnlineSampler(Base):
         )
 
         self.env_name = env_name
-        self.total_num_worker = ceil(batch_size / episode_len)
+        self.num_episodes_per_worker = 3  # fixed
+        self.total_num_worker = ceil(
+            batch_size / (self.num_episodes_per_worker * episode_len)
+        )
+
         # self.envs = [get_env() for _ in range(self.total_num_worker)]
 
         if verbose:
@@ -196,7 +200,6 @@ class OnlineSampler(Base):
         self,
         pid,
         queue,
-        # barrier,
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
@@ -215,21 +218,16 @@ class OnlineSampler(Base):
         current_time = 0
 
         # env initialization
-        active = True
         env = get_env(self.env_name)
-        state, _ = env.reset(seed=worker_seed)
-        for t in range(self.episode_len):
-            if active:  # this is to avoid barrier deadlock
+        for i in range(self.num_episodes_per_worker):
+            state, _ = env.reset(seed=worker_seed + i)
+            for t in range(self.episode_len):
                 with torch.no_grad():
                     a, metaData = policy(state, deterministic=deterministic)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
 
                 # env stepping
                 next_state, rew, term, trunc, infos = env.step(np.argmax(a))
-
-                # print(
-                #     f"pid: {pid}, t/T: {t}/{self.episode_len}, rew: {rew:.2f}, terminal: {term}, trunc: {trunc}"
-                # )
 
                 if t == self.episode_len - 1:
                     trunc = True  # force truncation at the end of episode
@@ -249,10 +247,9 @@ class OnlineSampler(Base):
                 )
 
                 if done:
-                    active = False
                     current_time += t + 1
 
-            state = next_state
+                state = next_state
 
         env.close()
 
