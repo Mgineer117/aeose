@@ -248,6 +248,7 @@ class OnlineSampler(Base):
 
                 if done:
                     current_time += t + 1
+                    break
 
                 state = next_state
 
