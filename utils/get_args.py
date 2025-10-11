@@ -53,7 +53,7 @@ def get_args():
         default=[256, 256],
     )
     parser.add_argument(
-        "--target-actor-fc-dim", type=int, nargs="+", default=[256, 256]
+        "--target-actor-fc-dim", type=int, nargs="+", default=[1024, 1024]
     )
     parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
 
