@@ -304,7 +304,7 @@ def get_env():
     return env
 
 
-# Optional quick smoke-run
+# Optional quick smoke-run - Omit for usage in training/eval
 if __name__ == "__main__":
     import gymnasium as gym
     env = get_env()
