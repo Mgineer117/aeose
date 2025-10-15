@@ -63,7 +63,7 @@ def s_hat_H(sat):
     r_SB_H = rv2HN(r_BN_N, sat.dynamics.v_BN_N) @ r_SB_N
     return r_SB_H / np.linalg.norm(r_SB_H)
 
-class PowerSatDyn(dyn.ImagingDynModel, dyn.GroundStationDynModel):
+class PowerSatDyn(dyn.GroundStationDynModel, dyn.ImagingDynModel):
     """Imaging dynamics + ground-station access hooks (lets GS track this sat)."""
     pass
 

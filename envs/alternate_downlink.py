@@ -46,6 +46,9 @@ class Density(obs.Observation):
         densities = [sum(rewards[time_bins == i]) for i in range(self.intervals)]
         return np.array(densities) / self.norm
 
+#Removing this function and using in-built wheel_speeds_fraction observation instead to help with wheel desat action 
+#def wheel_speed_3(sat):
+#    return np.array(sat.dynamics.wheel_speeds[0:3]) / 630
 
 def s_hat_H(sat):
     r_SN_N = (
@@ -72,8 +75,8 @@ def power_sat_generator(n_ahead=32, include_time=False):
         action_spec = [
             act.Image(n_ahead_image=n_ahead),
             act.Charge(),
-            act.Downlink(duration=60.0),  # drains buffer ONLY in GS access
-            act.Desat(),                  # your existing desaturation action
+            act.Downlink(),  # drains buffer ONLY in GS access
+            act.Desat(),
         ]
 
         # ADDED: storage_level_fraction to SatProperties; ADDED GS opportunity block
@@ -188,14 +191,14 @@ class TerminationGuard(GlobalReward):
 
 # NEW: Minimal bytes-downlinked rewarder (action + GS contact gated)
 
-class DownlinkBytesReward(GlobalReward):
+class DownlinkReward(GlobalReward):
     """
     Minimal positive credit when:
-      (a) the agent actually chose Downlink, AND
+      (a) agent chose Downlink, AND
       (b) a ground-station pass is open, AND
       (c) buffer decreased this step.
-    Scales drained 'units' by value_per_unit. If your storage units are bits,
-    value_per_unit = 1/8e6 gives +1 per MB; if bytes, use 1/1e6.
+    value_per_unit: set to 1/8e6 for +1 per MB if your storage units are *bits*;
+                    set to 1/1e6 if units are *bytes*.
     """
     data_store_type = NoDataStore
 
@@ -203,26 +206,42 @@ class DownlinkBytesReward(GlobalReward):
         super().__init__()
         self.value_per_unit = float(value_per_unit)
         self._prev_storage = {}
+        self._primed = False  # handle cases where reset() happens before simulator attached
 
-    def reset(self):
-        # Snapshot current storage per sat at (re)start
-        self._prev_storage = {
-            sat.id: float(sat.dynamics.storage_level) for sat in self.simulator.satellites
-        }
-
+    # ---- helpers ----
     def _in_contact(self, sat) -> bool:
-        # Prefer official opportunity API; fallback to dyn flag if present
         try:
             return len(sat.current_opportunities(types="ground_station")) > 0
         except Exception:
             return bool(getattr(sat.dynamics, "gs_in_view", False))
 
-    def calculate_reward(self, new_data_dict):
-        rewards = {sat.id: 0.0 for sat in self.simulator.satellites}
-        last_action = getattr(self.simulator, "last_action_name_map", {})
+    def _ensure_primed(self, sim):
+        if self._primed or sim is None:
+            return
+        for sat in getattr(sim, "satellites", []):
+            self._prev_storage[sat.id] = float(sat.dynamics.storage_level)
+        self._primed = True
 
-        for sat in self.simulator.satellites:
-            # Gate on action == Downlink AND GS contact open
+    # ---- API expected by your BSK-RL build ----
+    def reset(self, **kwargs):
+        sim = kwargs.get("simulator", getattr(self, "simulator", None))
+        self._prev_storage = {}
+        self._primed = False
+        # Prime if simulator is available at reset-time
+        self._ensure_primed(sim)
+
+    def calculate_reward(self, new_data_dict, **kwargs):
+        # Get simulator from kwargs (preferred in your build) or from attribute
+        sim = kwargs.get("simulator", getattr(self, "simulator", None))
+        sats = getattr(sim, "satellites", [])
+        last_action = getattr(sim, "last_action_name_map", {})
+
+        # Make sure we’ve taken an initial snapshot
+        self._ensure_primed(sim)
+
+        rewards = {sat.id: 0.0 for sat in sats}
+
+        for sat in sats:
             picked_downlink = (last_action.get(sat.id, "") == "action_downlink")
             if not picked_downlink or not self._in_contact(sat):
                 # Keep snapshot fresh even if not crediting
@@ -272,7 +291,7 @@ def get_env():
         # - Termination guard (zero reward; env applies failure_penalty at stop)
         rewarder=(
             UniqueImageReward(reward_fn=lambda p: 0.1 * p),
-            DownlinkBytesReward(value_per_unit=1.0 / (8e6)),  # +1 per MB if units are bits
+            DownlinkReward(value_per_unit=1.0 / (8e6)),  # +1 per MB if units are bits
             TerminationGuard(),
         ),
         sim_rate=0.5,
