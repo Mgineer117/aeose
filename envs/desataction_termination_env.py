@@ -8,7 +8,10 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
-from bsk_rl.data.base import GlobalReward, DataStore, NoDataStore
+# Import GlobalReward and provide a compatibility fallback for NoDataStore
+from bsk_rl.data.base import GlobalReward, DataStore
+from bsk_rl.data.no_data import NoDataStore
+
 from bsk_rl.data.unique_image_data import UniqueImageReward
 
 
@@ -125,7 +128,7 @@ SAT_ARGS_POWER.update(
         
         maxWheelSpeed=6000.0, # ~630 rad/s defining max wheel speed to help with wheel_speeds_fraction observation #https://www.aac-clyde.space/what-we-do/space-products-components/adcs/rw400 
         wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),
-        desatAttitude="nadir",
+        desatAttitude="nadir", #feel like we shouold desat to sun-pointing to help with power generation during desat
         
         storageInit=lambda: np.random.randint(0, int(0.01 * SAT_ARGS["dataStorageCapacity"])),
         #transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)

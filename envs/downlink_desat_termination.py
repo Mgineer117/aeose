@@ -3,13 +3,16 @@ from Basilisk.architecture import bskLogging
 from Basilisk.utilities import orbitalMotion
 
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
-from bsk_rl.sim import fsw, world #Imported `world` and configured the simulator to use GroundStationWorldModel with default args so GS contact windows are actually generated and visible
+from bsk_rl.sim import dyn, fsw, world #Imported `world` and configured the simulator to use GroundStationWorldModel with default args so GS contact windows are actually generated and visible
 from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
-from bsk_rl.data.base import GlobalReward, NoDataStore
+# Import GlobalReward and provide a compatibility fallback for NoDataStore
+from bsk_rl.data.base import GlobalReward, DataStore
+from bsk_rl.data.no_data import NoDataStore
+
 from bsk_rl.data.unique_image_data import UniqueImageReward
 
 
@@ -60,6 +63,10 @@ def s_hat_H(sat):
     r_SB_H = rv2HN(r_BN_N, sat.dynamics.v_BN_N) @ r_SB_N
     return r_SB_H / np.linalg.norm(r_SB_H)
 
+class PowerSatDyn(dyn.ImagingDynModel, dyn.GroundStationDynModel):
+    """Imaging dynamics + ground-station access hooks (lets GS track this sat)."""
+    pass
+
 
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
@@ -88,7 +95,8 @@ def power_sat_generator(n_ahead=32, include_time=False):
                 n_ahead_observe=n_ahead,
             ),
 
-            # Added another `OpportunityProperties(...)` block with `type="ground_station"` so the agent sees n-ahead open/close times for upcoming GS passes (timing the downlink action).
+            # Added another `OpportunityProperties(...)` block with `type="ground_station"` 
+            # so the agent sees n-ahead open/close times for upcoming GS passes (timing the downlink action).
             obs.OpportunityProperties(
                 dict(prop="opportunity_open", norm=300.0),
                 dict(prop="opportunity_close", norm=300.0),
@@ -103,6 +111,7 @@ def power_sat_generator(n_ahead=32, include_time=False):
             observation_spec.append(obs.Time())
 
         fsw_type = fsw.SteeringImagerFSWModel
+        dyn_type = PowerSatDyn # Use the combined Imaging + GroundStation dynamics model
 
     return PowerSat
 
@@ -136,7 +145,7 @@ SAT_ARGS_POWER.update(
 
         maxWheelSpeed=6000.0, # ~630 rad/s defining max wheel speed to help with wheel_speeds_fraction observation #https://www.aac-clyde.space/what-we-do/space-products-components/adcs/rw400 
         wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),
-        desatAttitude="nadir",
+        desatAttitude="nadir", 
         
         storageInit=lambda: np.random.randint(0, int(0.01 * SAT_ARGS["dataStorageCapacity"])),
         transmitterBaudRate=- 50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
@@ -164,11 +173,8 @@ class DownlinkReward(GlobalReward):
     def _in_downlink(self, sat):
         # true if a GS contact is open "now"
         # We only want to credit data that was sent during a real contact, not incidental buffer drops (e.g., manual resets or bookkeeping)
-        try:
-            windows = sat.current_opportunities(types=self.opp_type)
-            return bool(windows)
-        except Exception:
-            return False
+        windows = sat.current_opportunities(types=self.opp_type)
+        return bool(windows)
 
     #Absolute buffer fill in *bits* (float). Provided by ImagingDynModel. Used to compute how many bits left the buffer this step
     def _get_storage(self, dyn):
@@ -208,7 +214,7 @@ class DownlinkReward(GlobalReward):
 
 class TerminationGuard(GlobalReward):
     #Adds failure/termination only; contributes zero reward
-    data_store_type = NoDataStore  # any store type works; we don't use new data
+    data_store_type = DataStore  # any store type works; we don't use new data
 
     def calculate_reward(self, new_data_dict):
         # No reward contribution; leave imaging reward to UniqueImageReward
@@ -243,7 +249,7 @@ def get_env():
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
-        rewarder=(UniqueImageReward(), DownlinkReward(data_value_per_bit=1e-6), TerminationGuard()),
+        rewarder=(UniqueImageReward(reward_fn=lambda p: 0.1*p), DownlinkReward(data_value_per_bit=1e-6), TerminationGuard()),
         sim_rate=0.5,
         max_step_duration=300.0,
         time_limit=duration,
