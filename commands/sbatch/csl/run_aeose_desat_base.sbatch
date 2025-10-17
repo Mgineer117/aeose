@@ -19,9 +19,9 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 --seed 1 --env-name desat & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 1 --env-name desat & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 4 --seed 1 --env-name desat & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 8 --seed 1 --env-name desat & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 1 --env-name desat & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 2 --env-name desat & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 3 --env-name desat & 
