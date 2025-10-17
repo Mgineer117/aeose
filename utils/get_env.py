@@ -3,7 +3,7 @@ from Basilisk.architecture import bskLogging
 from Basilisk.utilities import orbitalMotion
 
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
-from bsk_rl.sim import fsw
+from bsk_rl.sim import dyn, fsw, world  # <-- ADDED: world to enable GroundStation world
 from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
@@ -111,65 +111,70 @@ class TerminationGuard(GlobalReward):
 
 
 class DownlinkReward(GlobalReward):
-    data_store_type = ResourceDataStore
+    """
+    Minimal positive credit when:
+      (a) agent chose Downlink, AND
+      (b) a ground-station pass is open, AND
+      (c) buffer decreased this step.
+    value_per_unit: set to 1/8e6 for +1 per MB if your storage units are *bits*;
+                    set to 1/1e6 if units are *bytes*.
+    """
+    data_store_type = NoDataStore
 
-    def __init__(
-        self,
-        data_value_per_bit=1e-6,
-        storage_penalty_threshold=0.95,
-        opp_type="ground_station",
-    ):
+    def __init__(self, value_per_unit=1.0 / (8e6)):
         super().__init__()
-        # Monetary/value weight for each bit delivered. Tune to balance against imaging reward magnitudes
-        self.data_value_per_bit = data_value_per_bit
-        # Begin penalizing once the buffer fraction exceeds this threshold (dimensionless in 0..1)
-        self.storage_penalty_threshold = storage_penalty_threshold
-        # Per-satellite memory of last-step buffer fill (absolute bits). Used to compute deltas
-        self.previous_storage = {}
-        # Opportunity stream name to treat as "downlink" (above as "ground_station")
-        self.opp_type = opp_type
+        self.value_per_unit = float(value_per_unit)
+        self._prev_storage = {}
+        self._primed = False  # handle cases where reset() happens before simulator attached
 
-    def _in_downlink(self, sat):
-        # true if a GS contact is open "now"
-        # We only want to credit data that was sent during a real contact, not incidental buffer drops (e.g., manual resets or bookkeeping)
+    # ---- helpers ----
+    def _in_contact(self, sat) -> bool:
         try:
-            windows = sat.current_opportunities(types=self.opp_type)
-            return bool(windows)
+            return len(sat.current_opportunities(types="ground_station")) > 0
         except Exception:
-            return False
+            return bool(getattr(sat.dynamics, "gs_in_view", False))
 
-    # Compute reward for each satellite for this step
-    # We iterate over all satellites every step so this reward always returns a complete mapping and doesn’t silently no-op
-    # "Data delivered" = max(0, prev_storage - current_storage) when a GS contact is open
-    def calculate_reward(self, new_data_dict):
-        rewards = {}
-        print(self)
-        print(self.__dict__)
-        for sat_id, sat in new_data_dict.items():
-            print(sat_id, sat)
-            print(sat.__dict__)
-            current_storage = sat.dynamics.storage_level
-            current_frac = sat.dynamics.storage_level_fraction
+    def _ensure_primed(self, sim):
+        if self._primed or sim is None:
+            return
+        for sat in getattr(sim, "satellites", []):
+            self._prev_storage[sat.id] = float(sat.dynamics.storage_level)
+        self._primed = True
 
-            r = 0.0
-            # Credit net bits downlinked this step, but only if a GS window is open now
-            if sat_id in self.previous_storage and self._in_downlink(sat):
-                # If imaging is active, prev - current may be smaller (or zero) — that's expected
-                data_downlinked = max(
-                    0.0, self.previous_storage[sat_id] - current_storage
-                )
-                r += data_downlinked * self.data_value_per_bit
+    # ---- API expected by your BSK-RL build ----
+    def reset(self, **kwargs):
+        sim = kwargs.get("simulator", getattr(self, "simulator", None))
+        self._prev_storage = {}
+        self._primed = False
+        # Prime if simulator is available at reset-time
+        self._ensure_primed(sim)
 
-            # Soft penalty for carrying a near-full buffer (encourages timely downlinks)
-            if current_frac > self.storage_penalty_threshold:
-                r -= 5.0 * (current_frac - self.storage_penalty_threshold)
+    def calculate_reward(self, new_data_dict, **kwargs):
+        # Get simulator from kwargs (preferred in your build) or from attribute
+        sim = kwargs.get("simulator", getattr(self, "simulator", None))
+        sats = getattr(sim, "satellites", [])
+        last_action = getattr(sim, "last_action_name_map", {})
 
-            # Update memory for next step’s delta computation
-            self.previous_storage[sat_id] = current_storage
-            # Record per-satellite reward
-            rewards[sat_id] = r
+        # Make sure we’ve taken an initial snapshot
+        self._ensure_primed(sim)
+
+        rewards = {sat.id: 0.0 for sat in sats}
+
+        for sat in sats:
+            picked_downlink = (last_action.get(sat.id, "") == "action_downlink")
+            if not picked_downlink or not self._in_contact(sat):
+                # Keep snapshot fresh even if not crediting
+                self._prev_storage[sat.id] = float(sat.dynamics.storage_level)
+                continue
+
+            now = float(sat.dynamics.storage_level)
+            was = float(self._prev_storage.get(sat.id, now))
+            drained = max(0.0, was - now)
+            if drained > 0.0:
+                rewards[sat.id] += self.value_per_unit * drained
+            self._prev_storage[sat.id] = now
+
         return rewards
-
 
 def s_hat_H(sat):
     r_SN_N = (
@@ -184,8 +189,93 @@ def s_hat_H(sat):
     r_SB_H = rv2HN(r_BN_N, sat.dynamics.v_BN_N) @ r_SB_N
     return r_SB_H / np.linalg.norm(r_SB_H)
 
+class PowerSatDyn(dyn.GroundStationDynModel, dyn.ImagingDynModel):
+    """Imaging dynamics + ground-station access hooks (lets GS track this sat)."""
+    pass
 
-def power_sat_generator(action_specs: list, n_ahead=32, include_time=False):
+def power_sat_generator(n_ahead=32, include_time=False):
+    class PowerSat(sats.ImagingSatellite):
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
+        observation_spec = [
+            obs.SatProperties(
+                dict(prop="omega_BH_H", norm=0.03),
+                dict(prop="c_hat_H"),
+                dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
+                dict(prop="v_BN_P", norm=7616.5),
+                dict(prop="battery_charge_fraction"),
+                dict(
+                    prop="wheel_speeds_fraction"
+                ),  # wheel speeds normalized by max to help with wheel desat action
+                dict(prop="s_hat_H", fn=s_hat_H),
+            ),
+            obs.OpportunityProperties(
+                dict(prop="priority"),
+                dict(prop="r_LB_H", norm=800 * 1e3),
+                dict(prop="target_angle", norm=np.pi / 2),
+                dict(prop="target_angle_rate", norm=0.03),
+                dict(prop="opportunity_open", norm=300.0),
+                dict(prop="opportunity_close", norm=300.0),
+                type="target",
+                n_ahead_observe=n_ahead,
+            ),
+            obs.Eclipse(norm=5700),
+            Density(intervals=20, norm=5),
+        ]
+
+        if include_time:
+            observation_spec.append(obs.Time())
+
+        fsw_type = fsw.SteeringImagerFSWModel
+
+    return PowerSat
+
+def downlink_power_sat_generator(action_specs: list, n_ahead=32, include_time=False):
+    class PowerSat(sats.ImagingSatellite):
+        action_spec = action_specs
+        observation_spec = [
+            obs.SatProperties(
+                dict(prop="omega_BH_H", norm=0.03),
+                dict(prop="c_hat_H"),
+                dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
+                dict(prop="v_BN_P", norm=7616.5),
+                dict(prop="battery_charge_fraction"),
+                dict(
+                    prop="wheel_speeds_fraction"
+                ),  # wheel speeds normalized by max to help with wheel desat action
+                dict(prop="s_hat_H", fn=s_hat_H),
+                dict(prop="storage_level_fraction"),  # <-- lets the agent see buffer fill
+            ),
+            obs.OpportunityProperties(
+                dict(prop="priority"),
+                dict(prop="r_LB_H", norm=800 * 1e3),
+                dict(prop="target_angle", norm=np.pi / 2),
+                dict(prop="target_angle_rate", norm=0.03),
+                dict(prop="opportunity_open", norm=300.0),
+                dict(prop="opportunity_close", norm=300.0),
+                type="target",
+                n_ahead_observe=n_ahead,
+            ),
+            # NEW: Ground-station opportunity window so policy can time Downlink
+            obs.OpportunityProperties(
+                dict(prop="opportunity_open", norm=5700.0),
+                dict(prop="opportunity_close", norm=5700.0),
+                type="ground_station",
+                n_ahead_observe=1,
+            ),
+            obs.Eclipse(norm=5700),
+            Density(intervals=20, norm=5),
+        ]
+
+        if include_time:
+            observation_spec.append(obs.Time())
+
+        fsw_type = fsw.SteeringImagerFSWModel
+        dyn_type = PowerSatDyn
+
+    return PowerSat
+
+
+def desat_power_sat_generator(action_specs: list, n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
         action_spec = action_specs
         observation_spec = [
@@ -275,6 +365,7 @@ def get_env(env_name):
     if env_name == "basic":
         action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
         rewarders = [data.UniqueImageReward()]
+        power_sat_generator = power_sat_generator
     elif env_name == "resource":
         action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
         resource_fn = lambda sat: sat.dynamics.battery_charge_fraction  # or equivalent
@@ -283,16 +374,19 @@ def get_env(env_name):
             data.UniqueImageReward(),
             data.ResourceReward(reward_weight=reward_weight, resource_fn=resource_fn),
         ]
+        power_sat_generator = power_sat_generator
     elif env_name == "desat":
         action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
         rewarders = [data.UniqueImageReward(), TerminationGuard()]
+        power_sat_generator = desat_power_sat_generator
     elif env_name == "downlink":
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat()]
+        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat(), act.Downlink()]
         rewarders = [
             data.UniqueImageReward(),
-            DownlinkReward(data_value_per_bit=1e-6),
+            DownlinkReward(),
             TerminationGuard(),
         ]
+        power_sat_generator = downlink_power_sat_generator
     else:
         NotImplementedError(f"{env_name} is not implemented.")
 
