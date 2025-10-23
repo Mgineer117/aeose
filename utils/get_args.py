@@ -70,7 +70,7 @@ def get_args():
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
     parser.add_argument("--minibatch-size", type=int, default=4096, help="")
     parser.add_argument("--batch-size", type=int, default=256, help="")
-    parser.add_argument("--K-epochs", type=int, default=50, help="")
+    parser.add_argument("--K-epochs", type=int, default=100, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
