@@ -11,13 +11,25 @@ from utils.functions import concat_csv_columnwise_and_delete, seed_all, setup_lo
 from utils.get_args import get_args
 from utils.get_env import get_env
 
+from envs import get_downlink_env, get_desat_env, get_charge_env, get_resource_env
+
 
 def run(args, seed, unique_id, exp_time, run_id):
     # fix seed
     seed_all(seed)
 
     # get env
-    env = get_env(args.env_name)
+    if args.env_name == "charge":
+        env = get_charge_env()
+    elif args.env_name == "resource":
+        env = get_resource_env()
+    elif args.env_name == "desat":
+        env = get_desat_env()
+    elif args.env_name == "downlink":
+        env = get_downlink_env()
+    else:
+        raise NotImplementedError(f"{args.env_name} is not implemented.")
+
     env.max_steps = 1000
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
