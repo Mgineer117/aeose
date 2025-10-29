@@ -154,7 +154,7 @@ def get_resource_env():
         time_limit=duration,
         failure_penalty=0.0,
         terminate_on_time_limit=True,
-        log_level="INFO",
+        log_level="ERROR",
     )
 
     return env
