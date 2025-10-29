@@ -177,7 +177,7 @@ SAT_ARGS_POWER.update(
 
 
 class DownlinkReward(GlobalReward):
-    data_store_type = DataStore
+    data_store_type = NoDataStore
 
     def __init__(
         self,
