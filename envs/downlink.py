@@ -240,7 +240,7 @@ class DownlinkReward(GlobalReward):
 
 class TerminationGuard(GlobalReward):
     # Adds failure/termination only; contributes zero reward
-    data_store_type = DataStore  # any store type works; we don't use new data
+    datastore_type = DataStore  # any store type works; we don't use new data
 
     def calculate_reward(self, new_data_dict):
         # No reward contribution; leave imaging reward to UniqueImageReward
