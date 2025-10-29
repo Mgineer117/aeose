@@ -10,6 +10,7 @@ import torch.multiprocessing as mp
 import torch.nn as nn
 
 from utils.functions import temp_seed
+from utils.get_env import get_env
 
 today = date.today()
 
@@ -94,7 +95,6 @@ class OnlineSampler(Base):
 
     def collect_samples(
         self,
-        env,
         policy,
         seed: int | None = None,
         deterministic: bool = False,
@@ -129,7 +129,7 @@ class OnlineSampler(Base):
 
             for i in range(self.total_num_worker):
                 # args = (i, queue, barrier, policy, seed, deterministic)
-                args = (i, queue, env, policy, seed, deterministic)
+                args = (i, queue, policy, seed, deterministic)
                 p = mp.Process(target=self.collect_trajectory, args=args)
                 processes.append(p)
                 p.start()
@@ -200,11 +200,12 @@ class OnlineSampler(Base):
         self,
         pid,
         queue,
-        env,
         policy: nn.Module,
         seed: int,
         deterministic: bool = False,
     ):
+        env = get_env(self.env_name)
+
         # assign per-worker seed
         worker_seed = seed + pid
         np.random.seed(worker_seed)

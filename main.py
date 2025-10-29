@@ -9,8 +9,7 @@ import torch.multiprocessing as mp
 import wandb
 from utils.functions import concat_csv_columnwise_and_delete, seed_all, setup_logger
 from utils.get_args import get_args
-
-from envs import get_downlink_env, get_desat_env, get_charge_env, get_resource_env
+from utils.get_env import get_env
 
 
 def run(args, seed, unique_id, exp_time, run_id):
@@ -18,17 +17,7 @@ def run(args, seed, unique_id, exp_time, run_id):
     seed_all(seed)
 
     # get env
-    if args.env_name == "charge":
-        env = get_charge_env()
-    elif args.env_name == "resource":
-        env = get_resource_env()
-    elif args.env_name == "desat":
-        env = get_desat_env()
-    elif args.env_name == "downlink":
-        env = get_downlink_env()
-    else:
-        raise NotImplementedError(f"{args.env_name} is not implemented.")
-
+    env = get_env(args.env_name)
     env.max_steps = 1000
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n

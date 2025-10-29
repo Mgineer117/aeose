@@ -72,7 +72,7 @@ class Trainer:
                 self.policy.train()
 
                 batch, sample_time = self.sampler.collect_samples(
-                    env=self.env, policy=self.policy, seed=self.seed
+                    policy=self.policy, seed=self.seed
                 )
                 if "states" in batch:
                     loss_dict, timesteps, update_time = self.policy.learn(batch)
