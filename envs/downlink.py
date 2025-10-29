@@ -286,7 +286,7 @@ def get_downlink_env():
         scenario=targets,
         rewarder=(
             UniqueImageReward(reward_fn=lambda p: 0.1 * p),
-            DownlinkReward(data_value_per_bit=1e-6),
+            DownlinkReward(),
             TerminationGuard(),
         ),
         sim_rate=0.5,
