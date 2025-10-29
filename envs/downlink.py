@@ -177,72 +177,66 @@ SAT_ARGS_POWER.update(
 
 
 class DownlinkReward(GlobalReward):
-    """
-    Minimal positive credit when:
-      (a) agent chose Downlink, AND
-      (b) a ground-station pass is open, AND
-      (c) buffer decreased this step.
-    value_per_unit: set to 1/8e6 for +1 per MB if your storage units are *bits*;
-                    set to 1/1e6 if units are *bytes*.
-    """
-
     data_store_type = NoDataStore
 
-    def __init__(self, value_per_unit=1.0 / (8e6)):
+    def __init__(
+        self,
+        data_value_per_bit=1e-6,
+        storage_penalty_threshold=0.95,
+        opp_type="ground_station",
+    ):
         super().__init__()
-        self.value_per_unit = float(value_per_unit)
-        self._prev_storage = {}
-        self._primed = (
-            False  # handle cases where reset() happens before simulator attached
-        )
+        # Monetary/value weight for each bit delivered. Tune to balance against imaging reward magnitudes
+        self.data_value_per_bit = data_value_per_bit
+        # Begin penalizing once the buffer fraction exceeds this threshold (dimensionless in 0..1)
+        self.storage_penalty_threshold = storage_penalty_threshold
+        # Per-satellite memory of last-step buffer fill (absolute bits). Used to compute deltas
+        self.previous_storage = {}
+        # Opportunity stream name to treat as "downlink" (above as "ground_station")
+        self.opp_type = opp_type
 
-    # ---- helpers ----
-    def _in_contact(self, sat) -> bool:
-        try:
-            return len(sat.current_opportunities(types="ground_station")) > 0
-        except Exception:
-            return bool(getattr(sat.dynamics, "gs_in_view", False))
+    def _in_downlink(self, sat):
+        # true if a GS contact is open "now"
+        # We only want to credit data that was sent during a real contact, not incidental buffer drops (e.g., manual resets or bookkeeping)
+        windows = sat.current_opportunities(types=self.opp_type)
+        return bool(windows)
 
-    def _ensure_primed(self, sim):
-        if self._primed or sim is None:
-            return
-        for sat in getattr(sim, "satellites", []):
-            self._prev_storage[sat.id] = float(sat.dynamics.storage_level)
-        self._primed = True
+    # Absolute buffer fill in *bits* (float). Provided by ImagingDynModel. Used to compute how many bits left the buffer this step
+    def _get_storage(self, dyn):
+        return dyn.storage_level
 
-    # ---- API expected by your BSK-RL build ----
-    def reset(self, **kwargs):
-        sim = kwargs.get("simulator", getattr(self, "simulator", None))
-        self._prev_storage = {}
-        self._primed = False
-        # Prime if simulator is available at reset-time
-        self._ensure_primed(sim)
+    # Normalized buffer fill in [0, 1]. Used for 'near-saturation' penalty shaping
+    def _get_storage_frac(self, dyn):
+        return dyn.storage_level_fraction
 
-    def calculate_reward(self, new_data_dict, **kwargs):
-        # Get simulator from kwargs (preferred in your build) or from attribute
-        sim = kwargs.get("simulator", getattr(self, "simulator", None))
-        sats = getattr(sim, "satellites", [])
-        last_action = getattr(sim, "last_action_name_map", {})
+    # Compute reward for each satellite for this step
+    # We iterate over all satellites every step so this reward always returns a complete mapping and doesn’t silently no-op
+    # "Data delivered" = max(0, prev_storage - current_storage) when a GS contact is open
+    def calculate_reward(self, new_data_dict):
+        rewards = {}
+        for sat_id in self.simulator.satellites.keys():
+            sat = self.simulator.satellites[sat_id]
+            dyn = sat.dynamics
+            current_storage = self._get_storage(dyn)
+            current_frac = self._get_storage_frac(dyn)
 
-        # Make sure we’ve taken an initial snapshot
-        self._ensure_primed(sim)
+            r = 0.0
+            # Credit net bits downlinked this step, but only if a GS window is open now
+            if sat_id in self.previous_storage and self._in_downlink(sat):
+                # If imaging is active, prev - current may be smaller (or zero) — that's expected
+                data_downlinked = max(
+                    0.0, self.previous_storage[sat_id] - current_storage
+                )
+                r += data_downlinked * self.data_value_per_bit
 
-        rewards = {sat.id: 0.0 for sat in sats}
+            # Soft penalty for carrying a near-full buffer (encourages timely downlinks)
+            if current_frac > self.storage_penalty_threshold:
+                r -= 5.0 * (current_frac - self.storage_penalty_threshold)
 
-        for sat in sats:
-            picked_downlink = last_action.get(sat.id, "") == "action_downlink"
-            if not picked_downlink or not self._in_contact(sat):
-                # Keep snapshot fresh even if not crediting
-                self._prev_storage[sat.id] = float(sat.dynamics.storage_level)
-                continue
-
-            now = float(sat.dynamics.storage_level)
-            was = float(self._prev_storage.get(sat.id, now))
-            drained = max(0.0, was - now)
-            if drained > 0.0:
-                rewards[sat.id] += self.value_per_unit * drained
-            self._prev_storage[sat.id] = now
-
+            # Update memory for next step’s delta computation
+            self.previous_storage[sat_id] = current_storage
+            # Record per-satellite reward
+            rewards[sat_id] = r
         return rewards
 
 
@@ -286,7 +280,7 @@ def get_downlink_env():
         scenario=targets,
         rewarder=(
             UniqueImageReward(reward_fn=lambda p: 0.1 * p),
-            DownlinkReward(),
+            DownlinkReward(data_value_per_bit=1e-6),
             TerminationGuard(),
         ),
         sim_rate=0.5,
