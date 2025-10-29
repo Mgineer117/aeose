@@ -9,7 +9,6 @@ import torch.multiprocessing as mp
 import wandb
 from utils.functions import concat_csv_columnwise_and_delete, seed_all, setup_logger
 from utils.get_args import get_args
-from utils.get_env import get_env
 
 from envs import get_downlink_env, get_desat_env, get_charge_env, get_resource_env
 
