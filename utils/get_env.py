@@ -44,6 +44,9 @@ class Density(obs.Observation):
         return np.array(densities) / self.norm
 
 
+# useMaxTorque=False
+
+
 class NoData(Data):
     """Holds no data."""
 
@@ -119,13 +122,16 @@ class DownlinkReward(GlobalReward):
     value_per_unit: set to 1/8e6 for +1 per MB if your storage units are *bits*;
                     set to 1/1e6 if units are *bytes*.
     """
+
     data_store_type = NoDataStore
 
     def __init__(self, value_per_unit=1.0 / (8e6)):
         super().__init__()
         self.value_per_unit = float(value_per_unit)
         self._prev_storage = {}
-        self._primed = False  # handle cases where reset() happens before simulator attached
+        self._primed = (
+            False  # handle cases where reset() happens before simulator attached
+        )
 
     # ---- helpers ----
     def _in_contact(self, sat) -> bool:
@@ -161,7 +167,7 @@ class DownlinkReward(GlobalReward):
         rewards = {sat.id: 0.0 for sat in sats}
 
         for sat in sats:
-            picked_downlink = (last_action.get(sat.id, "") == "action_downlink")
+            picked_downlink = last_action.get(sat.id, "") == "action_downlink"
             if not picked_downlink or not self._in_contact(sat):
                 # Keep snapshot fresh even if not crediting
                 self._prev_storage[sat.id] = float(sat.dynamics.storage_level)
@@ -176,6 +182,7 @@ class DownlinkReward(GlobalReward):
 
         return rewards
 
+
 def s_hat_H(sat):
     r_SN_N = (
         sat.simulator.world.gravFactory.spiceObject.planetStateOutMsgs[
@@ -189,9 +196,12 @@ def s_hat_H(sat):
     r_SB_H = rv2HN(r_BN_N, sat.dynamics.v_BN_N) @ r_SB_N
     return r_SB_H / np.linalg.norm(r_SB_H)
 
+
 class PowerSatDyn(dyn.GroundStationDynModel, dyn.ImagingDynModel):
     """Imaging dynamics + ground-station access hooks (lets GS track this sat)."""
+
     pass
+
 
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
@@ -229,6 +239,7 @@ def power_sat_generator(n_ahead=32, include_time=False):
 
     return PowerSat
 
+
 def downlink_power_sat_generator(action_specs: list, n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
         action_spec = action_specs
@@ -243,7 +254,9 @@ def downlink_power_sat_generator(action_specs: list, n_ahead=32, include_time=Fa
                     prop="wheel_speeds_fraction"
                 ),  # wheel speeds normalized by max to help with wheel desat action
                 dict(prop="s_hat_H", fn=s_hat_H),
-                dict(prop="storage_level_fraction"),  # <-- lets the agent see buffer fill
+                dict(
+                    prop="storage_level_fraction"
+                ),  # <-- lets the agent see buffer fill
             ),
             obs.OpportunityProperties(
                 dict(prop="priority"),
@@ -380,7 +393,12 @@ def get_env(env_name):
         rewarders = [data.UniqueImageReward(), TerminationGuard()]
         power_sat_generator = desat_power_sat_generator
     elif env_name == "downlink":
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge(), act.Desat(), act.Downlink()]
+        action_spec = [
+            act.Image(n_ahead_image=n_ahead),
+            act.Charge(),
+            act.Desat(),
+            act.Downlink(),
+        ]
         rewarders = [
             data.UniqueImageReward(),
             DownlinkReward(),
