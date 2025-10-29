@@ -177,6 +177,8 @@ SAT_ARGS_POWER.update(
 
 
 class DownlinkReward(GlobalReward):
+    data_store_type = DataStore
+
     def __init__(
         self,
         data_value_per_bit=1e-6,
@@ -240,7 +242,7 @@ class DownlinkReward(GlobalReward):
 
 class TerminationGuard(GlobalReward):
     # Adds failure/termination only; contributes zero reward
-    datastore_type = DataStore  # any store type works; we don't use new data
+    data_store_type = DataStore  # any store type works; we don't use new data
 
     def calculate_reward(self, new_data_dict):
         # No reward contribution; leave imaging reward to UniqueImageReward
