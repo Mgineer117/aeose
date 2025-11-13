@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=aeose
+#SBATCH --job-name=charge
 #SBATCH --account=huytran1-ic
 #SBATCH --partition=csl
 #SBATCH --nodes=1
