@@ -260,6 +260,11 @@ class Trainer:
 
         model = self.policy.actor
 
+        # store buffer as json files in the model
+        self.policy.replay_buffer.save_to_json(
+            os.path.join(self.logger.checkpoint_dir, f"replay_buffer_{e}.json")
+        )
+
         if model is not None:
             model = deepcopy(model).to("cpu")
             torch.save(model.state_dict(), path)

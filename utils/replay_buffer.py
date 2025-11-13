@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import json
 
 
 class ReplayBuffer:
@@ -51,3 +52,16 @@ class ReplayBuffer:
             torch.from_numpy(self.reward[ind]).to(self.device).to(self.dtype),
             torch.from_numpy(self.terminal[ind]).to(self.device).to(self.dtype),
         )
+
+    def save_to_json(self, filepath):
+        # Convert numpy arrays to lists for JSON serialization
+        buffer_dict = {
+            "state": self.state[: self.size].tolist(),
+            "action": self.action[: self.size].tolist(),
+            "next_state": self.next_state[: self.size].tolist(),
+            "reward": self.reward[: self.size].tolist(),
+            "terminal": self.terminal[: self.size].tolist(),
+        }
+
+        with open(filepath, "w") as f:
+            json.dump(buffer_dict, f)

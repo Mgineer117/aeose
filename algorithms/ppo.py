@@ -5,6 +5,7 @@ from base_trainer import Trainer
 from policy.layers.ppo_networks import PPO_Actor, PPO_Critic
 from policy.ppo import PPO_Learner
 from utils.sampler import OnlineSampler
+from utils.replay_buffer import ReplayBuffer
 
 
 class PPO_Algorithm(nn.Module):
@@ -47,6 +48,14 @@ class PPO_Algorithm(nn.Module):
         trainer.train()
 
     def define_policy(self):
+        replay_buffer = ReplayBuffer(
+            state_dim=self.args.state_dim,
+            action_dim=self.args.action_dim,
+            buffer_size=200_000,
+            batch_size=self.args.batch_size,
+            device=self.args.device,
+        )
+
         actor = PPO_Actor(
             input_dim=self.args.state_dim,
             hidden_dim=self.args.actor_fc_dim,
@@ -59,6 +68,7 @@ class PPO_Algorithm(nn.Module):
         self.policy = PPO_Learner(
             actor=actor,
             critic=critic,
+            replay_buffer=replay_buffer,
             actor_lr=self.args.actor_lr,
             critic_lr=self.args.critic_lr,
             num_minibatch=self.args.num_minibatch,

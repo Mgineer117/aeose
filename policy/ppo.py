@@ -9,6 +9,7 @@ from policy.layers.ppo_networks import PPO_Actor, PPO_Critic
 
 # from utils.torch import get_flat_grad_from, get_flat_params_from, set_flat_params_to
 from utils.rl import estimate_advantages
+from utils.replay_buffer import ReplayBuffer
 
 # from models.layers.ppo_networks import PPO_Policy, PPO_Critic
 
@@ -18,6 +19,7 @@ class PPO_Learner(Base):
         self,
         actor: PPO_Actor,
         critic: PPO_Critic,
+        replay_buffer: ReplayBuffer,
         actor_lr: float = 3e-4,
         critic_lr: float = 5e-4,
         num_minibatch: int = 8,
@@ -35,6 +37,7 @@ class PPO_Learner(Base):
 
         # constants
         self.name = "PPO"
+        self.replay_buffer = replay_buffer
         self.device = device
 
         self.state_dim = actor.state_dim
@@ -79,6 +82,16 @@ class PPO_Learner(Base):
         """Performs a single training step using PPO, incorporating all reference training steps."""
         self.train()
         t0 = time.time()
+
+        # Store batch data in replay buffer
+        for i in range(batch["states"].shape[0]):
+            self.replay_buffer.append(
+                batch["states"][i],
+                batch["actions"][i],
+                batch["next_states"][i],
+                batch["rewards"][i],
+                batch["terminals"][i],
+            )
 
         # Ingredients: Convert batch data to tensors
         states = self.preprocess_state(batch["states"])
