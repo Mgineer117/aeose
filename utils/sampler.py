@@ -80,7 +80,7 @@ class OnlineSampler(Base):
         )
 
         self.env_name = env_name
-        self.num_episodes_per_worker = 3  # fixed
+        self.num_episodes_per_worker = 5  # fixed
         self.total_num_worker = ceil(
             batch_size / (self.num_episodes_per_worker * episode_len)
         )
