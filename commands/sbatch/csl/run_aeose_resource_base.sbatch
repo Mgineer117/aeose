@@ -21,17 +21,23 @@ conda activate aeose
 
 # === Run Experiments in Parallel === #
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 --seed 1 --env-name resource & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 --seed 2 --env-name resource & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 --seed 3 --env-name resource & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 1 --env-name resource & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 2 --env-name resource & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 3 --env-name resource & 
 CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 4 --seed 1 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 1 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 2 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 3 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 1 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 2 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 3 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 1 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 2 --env-name resource & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 3 --env-name resource &
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 4 --seed 2 --env-name resource & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 4 --seed 3 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 1 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 2 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 64 64 --seed 3 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 1 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 2 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 256 256 --seed 3 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 1 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 2 --env-name resource & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 1024 1024 --seed 3 --env-name resource &
 
 # === Wait for all background jobs to finish ===
 wait
