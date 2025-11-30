@@ -3,8 +3,8 @@
 #SBATCH --account=huytran1-ic
 #SBATCH --partition=csl
 #SBATCH --nodes=1
-#SBATCH --ntasks=12
-#SBATCH --cpus-per-task=4
+#SBATCH --ntasks=18
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:1
 #SBATCH --time=4-00:00:00
