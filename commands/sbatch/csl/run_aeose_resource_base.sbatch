@@ -4,10 +4,10 @@
 #SBATCH --partition=csl
 #SBATCH --nodes=1
 #SBATCH --ntasks=18
-#SBATCH --cpus-per-task=2
+#SBATCH --cpus-per-task=3
 #SBATCH --mem=256G
 #SBATCH --gres=gpu:1
-#SBATCH --time=4-00:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --output=aeose.o%j
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=minjae5@illinois.edu
