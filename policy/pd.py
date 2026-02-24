@@ -55,13 +55,13 @@ class PD_Learner(Base):
             "dist": metaData["dist"],
         }
 
-    def learn(self, replay_buffer: ReplayBuffer):
+    def learn(self, batch: dict[str, np.ndarray]):
         """Performs a single training step using PPO, incorporating all reference training steps."""
         self.train()
         t0 = time.time()
 
         # Ingredients: Convert batch data to tensors
-        states, _, _, _, _ = replay_buffer.sample()
+        states = torch.from_numpy(batch["states"]).float().to(self.device)
 
         # given states, generate distribution by the target_actor
         with torch.no_grad():

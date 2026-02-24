@@ -65,6 +65,7 @@ class PD_Algorithm(nn.Module):
         )
 
         model_path = f"model/{self.args.env_name}/model({'_'.join(str(x) for x in self.args.target_actor_fc_dim)})_{self.run_id}.pth"
+        data_path = f"model/{self.args.env_name}/data({'_'.join(str(x) for x in self.args.target_actor_fc_dim)})_{self.run_id}.npy"
         if os.path.exists(model_path):
             target_actor.load_state_dict(
                 torch.load(model_path, map_location=self.args.device)
