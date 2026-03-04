@@ -20,23 +20,23 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel ===
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 98 --run-id 0  & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 99 --run-id 0  & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 100 --run-id 0  & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 101 --run-id 0  & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 102 --run-id 0  & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 98 --run-id 0 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 99 --run-id 0 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 100 --run-id 0 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 101 --run-id 0 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 102 --run-id 0 --target-actor-fc-dim 1024 1024  & 
 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 98 --run-id 1  & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 99 --run-id 1  & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 100 --run-id 1  & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 101 --run-id 1  & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 102 --run-id 1  & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 98 --run-id 1 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 99 --run-id 1 --target-actor-fc-dim 1024 1024  &
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 100 --run-id 1 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 101 --run-id 1 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 102 --run-id 1 --target-actor-fc-dim 1024 1024  & 
 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 98 --run-id 2  & 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 99 --run-id 2  & 
-CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 100 --run-id 2  &
-CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 101 --run-id 2  &
-CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --timesteps 5000000 --seed 102 --run-id 2  &
+CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 98 --run-id 2 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 99 --run-id 2 --target-actor-fc-dim 1024 1024  & 
+CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 100 --run-id 2 --target-actor-fc-dim 1024 1024  &
+CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 101 --run-id 2 --target-actor-fc-dim 1024 1024  &
+CUDA_VISIBLE_DEVICES=2 python3 main.py --project aeos_pd --env-name desat --algo-name pd --actor-fc-dim 2 --epochs 100000 --seed 102 --run-id 2 --target-actor-fc-dim 1024 1024  &
 
 CUDA_VISIBLE_DEVICES=3 python3 main.py --project aeos_pd --env-name desat --algo-name ppo --actor-fc-dim 2 --seed 98 & 
 CUDA_VISIBLE_DEVICES=3 python3 main.py --project aeos_pd --env-name desat --algo-name ppo --actor-fc-dim 2 --seed 99 & 
