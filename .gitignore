@@ -156,3 +156,4 @@ nohup.out
 
 # Ignore VS Code settings (entire .vscode folder)
 .vscode/
+model/

@@ -3,12 +3,9 @@ import time
 import numpy as np
 import torch
 from torch.distributions.kl import kl_divergence
+
 from policy.base import Base
 from policy.layers.ppo_networks import PPO_Actor
-
-# from utils.torch import get_flat_grad_from, get_flat_params_from, set_flat_params_to
-from utils.replay_buffer import ReplayBuffer
-from utils.rl import estimate_advantages
 
 # from models.layers.ppo_networks import PPO_Policy, PPO_Critic
 
@@ -18,6 +15,7 @@ class PD_Learner(Base):
         self,
         actor: PPO_Actor,
         target_actor: PPO_Actor,
+        data: torch.Tensor,
         actor_lr: float,
         target_kl: float,
         gamma: float,
@@ -35,6 +33,9 @@ class PD_Learner(Base):
         # trainable networks
         self.actor = actor
         self.target_actor = target_actor
+        self.data = data
+
+        self.minibatch_size = 1024
 
         self.optimizer = torch.optim.Adam(params=self.actor.parameters(), lr=actor_lr)
 
@@ -55,13 +56,14 @@ class PD_Learner(Base):
             "dist": metaData["dist"],
         }
 
-    def learn(self, batch: dict[str, np.ndarray]):
+    def learn(self):
         """Performs a single training step using PPO, incorporating all reference training steps."""
         self.train()
         t0 = time.time()
 
         # Ingredients: Convert batch data to tensors
-        states = torch.from_numpy(batch["states"]).float().to(self.device)
+        indices = np.random.choice(len(self.data), self.minibatch_size, replace=False)
+        states = self.data[indices].to(self.device)
 
         # given states, generate distribution by the target_actor
         with torch.no_grad():
@@ -77,7 +79,7 @@ class PD_Learner(Base):
         # Update critic parameters
         self.optimizer.zero_grad()
         kl_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
         grad_dict = self.compute_gradient_norm(
             [self.actor],
             ["actor"],

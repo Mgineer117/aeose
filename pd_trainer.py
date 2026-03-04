@@ -11,8 +11,6 @@ from tqdm import tqdm
 
 from log.wandb_logger import WandbLogger
 from policy.base import Base
-from policy.uniform_random import UniformRandom
-from utils.replay_buffer import ReplayBuffer
 
 
 # model-free policy trainer
@@ -27,7 +25,6 @@ class PDTrainer:
         timesteps: int = 1e6,
         log_interval: int = 100,
         eval_num: int = 10,
-        warmup_samples: int = 10_000,
         rendering: bool = False,
         seed: int = 0,
     ) -> None:
@@ -41,7 +38,6 @@ class PDTrainer:
         # training parameters
         self.init_timesteps = init_timesteps
         self.timesteps = timesteps
-        self.warmup_samples = warmup_samples
 
         self.log_interval = log_interval
         self.eval_interval = int(self.timesteps / self.log_interval)
@@ -74,45 +70,42 @@ class PDTrainer:
                 pbar.update(1)
 
                 #### EVALUATIONS ####
-                if step >= self.warmup_samples:
-                    # Update environment steps and calculate time metrics
-                    loss_dict[f"{self.policy.name}/analytics/timesteps"] = step
-                    loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
-                    self.write_log(loss_dict, step=step)
+                # Update environment steps and calculate time metrics
+                loss_dict[f"{self.policy.name}/analytics/epochs"] = step
+                loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
+                self.write_log(loss_dict, step=step)
 
-                    if step >= self.eval_interval * (eval_idx + 1):
-                        ### Eval Loop
-                        self.policy.eval()
-                        eval_idx += 1
+                if step >= self.eval_interval * eval_idx:
+                    ### Eval Loop
+                    self.policy.eval()
+                    eval_idx += 1
 
-                        eval_dict, running_video = self.evaluate()
+                    eval_dict, running_video = self.evaluate()
 
-                        # Manual logging
-                        if self.policy.state_visitation is not None:
-                            visitation_map = self.policy.state_visitation
-                            vmin, vmax = visitation_map.min(), visitation_map.max()
-                            visitation_map = (visitation_map - vmin) / (
-                                vmax - vmin + 1e-8
-                            )
-                            visitation_map = self.visitation_to_rgb(visitation_map)
-                            self.write_image(
-                                image=visitation_map,
-                                step=step,
-                                logdir="Image",
-                                name="visitation map",
-                            )
-
-                        self.write_log(eval_dict, step=step, eval_log=True)
-                        self.write_video(
-                            running_video,
+                    # Manual logging
+                    if self.policy.state_visitation is not None:
+                        visitation_map = self.policy.state_visitation
+                        vmin, vmax = visitation_map.min(), visitation_map.max()
+                        visitation_map = (visitation_map - vmin) / (vmax - vmin + 1e-8)
+                        visitation_map = self.visitation_to_rgb(visitation_map)
+                        self.write_image(
+                            image=visitation_map,
                             step=step,
-                            logdir=f"videos",
-                            name="running_video",
+                            logdir="Image",
+                            name="visitation map",
                         )
 
-                        self.last_return_mean.append(eval_dict[f"eval/return_mean"])
+                    self.write_log(eval_dict, step=step, eval_log=True)
+                    self.write_video(
+                        running_video,
+                        step=step,
+                        logdir=f"videos",
+                        name="running_video",
+                    )
 
-                        self.save_model(step)
+                    self.last_return_mean.append(eval_dict[f"eval/return_mean"])
+
+                    self.save_model(step)
 
                 # terminate the training loop
                 if policy_infos["termination"]:

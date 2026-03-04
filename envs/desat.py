@@ -1,7 +1,6 @@
 import numpy as np
 from Basilisk.architecture import bskLogging
 from Basilisk.utilities import orbitalMotion
-
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
 from bsk_rl.sim import fsw
 from bsk_rl.utils.orbital import random_orbit, rv2HN
@@ -9,9 +8,8 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
 # Import GlobalReward and provide a compatibility fallback for NoDataStore
-from bsk_rl.data.base import GlobalReward, DataStore
+from bsk_rl.data.base import DataStore, GlobalReward
 from bsk_rl.data.no_data import NoDataStore
-
 from bsk_rl.data.unique_image_data import UniqueImageReward
 
 

@@ -31,7 +31,7 @@ def get_args():
     parser.add_argument("--algo-name", type=str, default="ppo", help="Algorithm name.")
     parser.add_argument("--seed", type=int, default=42, help="Batch size.")
     parser.add_argument(
-        "--num-runs", type=int, default=1, help="Number of samples for training."
+        "--num-runs", type=int, default=5, help="Number of samples for training."
     )
     parser.add_argument(
         "--run-id", type=int, default=0, help="Unique identifier for the run."
@@ -58,14 +58,17 @@ def get_args():
     parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
 
     parser.add_argument(
-        "--timesteps", type=int, default=int(1.1e7), help="Number of training epochs."
+        "--timesteps", type=int, default=int(1.2e7), help="Number of training epochs."
+    )
+    parser.add_argument(
+        "--epochs", type=int, default=int(500000), help="Number of training epochs."
     )
 
     parser.add_argument(
-        "--log-interval", type=int, default=10, help="Number of training epochs."
+        "--log-interval", type=int, default=100, help="Number of training epochs."
     )
     parser.add_argument(
-        "--eval-num", type=int, default=5, help="Number of training epochs."
+        "--eval-num", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
     parser.add_argument("--minibatch-size", type=int, default=4096, help="")
