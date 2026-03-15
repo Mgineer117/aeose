@@ -20,14 +20,14 @@ source ~/.bashrc
 conda activate aeose
 
 # === Run Experiments in Parallel === #
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 --seed 1 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 --seed 2 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 1 --seed 3 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 1 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose --actor-fc-dim 2 --seed 2 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 2 --seed 3 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 4 --seed 1 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 4 --seed 2 --env-name downlink --timesteps 21000000 & 
-CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose --actor-fc-dim 4 --seed 3 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose-new --actor-fc-dim 1 --seed 1 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose-new --actor-fc-dim 1 --seed 2 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose-new --actor-fc-dim 1 --seed 3 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose-new --actor-fc-dim 2 --seed 1 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=0 python3 main.py --project aeose-new --actor-fc-dim 2 --seed 2 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose-new --actor-fc-dim 2 --seed 3 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose-new --actor-fc-dim 4 --seed 1 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose-new --actor-fc-dim 4 --seed 2 --env-name downlink --timesteps 21000000 & 
+CUDA_VISIBLE_DEVICES=1 python3 main.py --project aeose-new --actor-fc-dim 4 --seed 3 --env-name downlink --timesteps 21000000 & 
 # === Wait for all background jobs to finish ===
 wait
