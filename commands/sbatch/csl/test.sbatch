@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=5
 #SBATCH --mem=128G
 #SBATCH --gres=gpu:2
-#SBATCH --time=7-00:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --output=aeose.o%j
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=minjae5@illinois.edu
