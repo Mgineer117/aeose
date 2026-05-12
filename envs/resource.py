@@ -149,8 +149,8 @@ def get_resource_env():
             data.UniqueImageReward(),
             data.ResourceReward(reward_weight=reward_weight, resource_fn=resource_fn),
         ],
-        sim_rate=1.0,
-        max_step_duration=600.0,
+        sim_rate=0.5,
+        max_step_duration=300.0,
         time_limit=duration,
         failure_penalty=0.0,
         # Time-limit -> truncation so V(s') still bootstraps.

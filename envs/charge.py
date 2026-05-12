@@ -143,8 +143,8 @@ def get_charge_env():
         ),
         scenario=targets,
         rewarder=data.UniqueImageReward(),
-        sim_rate=1.0,
-        max_step_duration=600.0,
+        sim_rate=0.5,
+        max_step_duration=300.0,
         time_limit=duration,
         failure_penalty=0.0,
         # Time-limit should be a truncation (artificial cutoff), not a
