@@ -164,8 +164,10 @@ class OffPolicyTrainer:
             visitation_map = (visitation_map - vmin) / (vmax - vmin + 1e-8)
             visitation_map = self.visitation_to_rgb(visitation_map)
             self.write_image(
-                image=visitation_map, step=step,
-                logdir="Image", name="visitation map",
+                image=visitation_map,
+                step=step,
+                logdir="Image",
+                name="visitation map",
             )
 
         self.write_log(eval_dict, step=step, eval_log=True)
@@ -265,16 +267,20 @@ class OffPolicyTrainer:
 
         model_cpu = deepcopy(model).to("cpu")
 
-        # best_model: higher return is better.
+        # best_model and best_buffer should always describe the same policy.
         if np.mean(self.last_return_mean) >= self.last_max_return_mean:
             best_path = os.path.join(self.logger.log_dir, "best_model.pth")
             torch.save(model_cpu.state_dict(), best_path)
+            if (
+                hasattr(self.policy, "replay_buffer")
+                and self.policy.replay_buffer is not None
+            ):
+                best_buffer_path = os.path.join(self.logger.log_dir, "best_buffer.json")
+                self.policy.replay_buffer.save_to_json(best_buffer_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
         # Periodic step-keyed checkpoint: every 10th eval, or forced (final).
-        periodic_due = (
-            eval_idx is not None and eval_idx > 0 and eval_idx % 10 == 0
-        )
+        periodic_due = eval_idx is not None and eval_idx > 0 and eval_idx % 10 == 0
         if not (force or periodic_due):
             return
 

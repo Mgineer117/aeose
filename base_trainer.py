@@ -275,10 +275,16 @@ class Trainer:
 
         model_cpu = deepcopy(model).to("cpu")
 
-        # Always keep best_model.pth up-to-date (single small file).
+        # Always keep best_model.pth and best_buffer.json aligned.
         if np.mean(self.last_return_mean) >= self.last_max_return_mean:
             best_path = os.path.join(self.logger.log_dir, "best_model.pth")
             torch.save(model_cpu.state_dict(), best_path)
+            if (
+                hasattr(self.policy, "replay_buffer")
+                and self.policy.replay_buffer is not None
+            ):
+                best_buffer_path = os.path.join(self.logger.log_dir, "best_buffer.json")
+                self.policy.replay_buffer.save_to_json(best_buffer_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
         # Only save checkpoint + replay buffer when forced (final eval).
