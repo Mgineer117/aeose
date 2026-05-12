@@ -4,6 +4,15 @@ Reinforcement learning experiments for spacecraft tasks (charge, desat, downlink
 
 ## Installation
 
+### 0. Create a Miniconda environment with Python 3.11
+
+This project is developed and tested with Python 3.11.* in a Miniconda environment.
+
+```bash
+conda create -n aeos python==3.11.*
+conda activate aeos
+```
+
 ### 1. Install Basilisk (`bsk`)
 
 ```bash
