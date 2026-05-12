@@ -5,7 +5,6 @@ import uuid
 
 import torch
 import torch.nn as nn
-import torch.multiprocessing as mp
 import wandb
 from utils.functions import concat_csv_columnwise_and_delete, seed_all, setup_logger
 from utils.get_args import get_args
@@ -18,7 +17,17 @@ def run(args, seed, unique_id, exp_time, run_id):
 
     # get env
     env = get_env(args.env_name)
-    env.max_steps = 1000
+    # bsk_rl envs end internally via `time_limit / max_step_duration` (≈95
+    # decision steps for the 5-orbit scenarios). We give the sampler some
+    # headroom above that as a safety-net so it never cuts the episode
+    # before the env itself does — but no longer the 1000 we had, which
+    # was 10× the real cap and just wasted preallocated buffer memory.
+    env_time_limit = getattr(env, "time_limit", None)
+    env_step_dur = getattr(env, "max_step_duration", None)
+    if env_time_limit is not None and env_step_dur:
+        env.max_steps = int(env_time_limit / env_step_dur) + 10
+    else:
+        env.max_steps = 1000
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
     args.episode_len = env.max_steps
@@ -54,7 +63,8 @@ def run(args, seed, unique_id, exp_time, run_id):
 
 if __name__ == "__main__":
     torch.set_default_dtype(torch.float32)
-    mp.set_start_method("spawn", force=True)
+    # NOTE: the sampler manages its own fork-based multiprocessing context;
+    # no global start method is set here.
 
     init_args = get_args()
     unique_id = str(uuid.uuid4())[:4]

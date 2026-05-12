@@ -97,15 +97,19 @@ class PPO_Learner(Base):
         states = self.preprocess_state(batch["states"])
         actions = self.preprocess_state(batch["actions"])
         rewards = self.preprocess_state(batch["rewards"])
-        terminals = self.preprocess_state(batch["terminals"])
+        terminations = self.preprocess_state(batch["terminations"])
+        truncations = self.preprocess_state(batch["truncations"])
         old_logprobs = self.preprocess_state(batch["logprobs"])
 
-        # Compute advantages and returns
+        # Compute advantages and returns. We pass terminations and truncations
+        # separately so the value bootstrap survives time-limit cutoffs while
+        # the GAE accumulator still resets at episode boundaries.
         with torch.no_grad():
             values = self.critic(states)
             advantages, returns = estimate_advantages(
                 rewards,
-                terminals,
+                terminations,
+                truncations,
                 values,
                 gamma=self.gamma,
                 gae=self.gae,
@@ -203,7 +207,7 @@ class PPO_Learner(Base):
         update_time = time.time() - t0
 
         # Cleanup
-        del states, actions, rewards, terminals, old_logprobs
+        del states, actions, rewards, terminations, truncations, old_logprobs
         self.eval()
 
         return loss_dict, timesteps, update_time

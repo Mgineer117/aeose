@@ -43,7 +43,8 @@ class PDTrainer:
         self.eval_interval = int(self.timesteps / self.log_interval)
 
         # initialize the essential training components
-        self.last_max_return_mean = 1e10
+        # Use -inf as the sentinel so best_model tracks the *highest* return.
+        self.last_max_return_mean = -1e10
 
         self.rendering = rendering
         self.seed = seed
@@ -52,6 +53,9 @@ class PDTrainer:
         start_time = time.time()
 
         self.last_return_mean = deque(maxlen=5)
+
+        # === Pre-training baseline eval (no checkpoint save). ===
+        self._run_eval(step=self.init_timesteps, save=False)
 
         # Train loop
         eval_idx = 0
@@ -69,43 +73,15 @@ class PDTrainer:
 
                 pbar.update(1)
 
-                #### EVALUATIONS ####
                 # Update environment steps and calculate time metrics
                 loss_dict[f"{self.policy.name}/analytics/epochs"] = step
                 loss_dict[f"{self.policy.name}/analytics/update_time"] = update_time
                 self.write_log(loss_dict, step=step)
 
-                if step >= self.eval_interval * eval_idx:
-                    ### Eval Loop
-                    self.policy.eval()
+                #### Periodic evaluation ####
+                if step >= self.eval_interval * (eval_idx + 1):
                     eval_idx += 1
-
-                    eval_dict, running_video = self.evaluate()
-
-                    # Manual logging
-                    if self.policy.state_visitation is not None:
-                        visitation_map = self.policy.state_visitation
-                        vmin, vmax = visitation_map.min(), visitation_map.max()
-                        visitation_map = (visitation_map - vmin) / (vmax - vmin + 1e-8)
-                        visitation_map = self.visitation_to_rgb(visitation_map)
-                        self.write_image(
-                            image=visitation_map,
-                            step=step,
-                            logdir="Image",
-                            name="visitation map",
-                        )
-
-                    self.write_log(eval_dict, step=step, eval_log=True)
-                    self.write_video(
-                        running_video,
-                        step=step,
-                        logdir=f"videos",
-                        name="running_video",
-                    )
-
-                    self.last_return_mean.append(eval_dict[f"eval/return_mean"])
-
-                    self.save_model(step)
+                    self._run_eval(step=step, save=True, eval_idx=eval_idx)
 
                 # terminate the training loop
                 if policy_infos["termination"]:
@@ -113,9 +89,39 @@ class PDTrainer:
 
                 torch.cuda.empty_cache()
 
+        # === Final evaluation — always checkpoints. ===
+        final_step = pbar.n
+        self._run_eval(
+            step=final_step, save=True, eval_idx=eval_idx + 1, force_save=True
+        )
+
         self.logger.print(
             f"Total {self.policy.name} training time: {(time.time() - start_time) / 3600} hours"
         )
+
+    def _run_eval(self, step, save=False, eval_idx=None, force_save=False):
+        """Single evaluation pass shared by baseline / periodic / final hooks."""
+        self.policy.eval()
+        eval_dict, running_video = self.evaluate()
+
+        if self.policy.state_visitation is not None:
+            visitation_map = self.policy.state_visitation
+            vmin, vmax = visitation_map.min(), visitation_map.max()
+            visitation_map = (visitation_map - vmin) / (vmax - vmin + 1e-8)
+            visitation_map = self.visitation_to_rgb(visitation_map)
+            self.write_image(
+                image=visitation_map, step=step,
+                logdir="Image", name="visitation map",
+            )
+
+        self.write_log(eval_dict, step=step, eval_log=True)
+        self.write_video(
+            running_video, step=step, logdir="videos", name="running_video"
+        )
+        self.last_return_mean.append(eval_dict["eval/return_mean"])
+
+        if save:
+            self.save_model(step, eval_idx=eval_idx, force=force_save)
 
     def evaluate(self):
         ep_buffer = []
@@ -123,8 +129,8 @@ class PDTrainer:
         for num_episodes in range(self.eval_num):
             ep_reward, ep_inf = [], []
 
-            # Env initialization
-            state, infos = self.env.reset(seed=self.seed)
+            # Env initialization — vary seed per episode for diverse rollouts.
+            state, infos = self.env.reset(seed=self.seed + num_episodes)
 
             for t in range(self.env.max_steps):
                 with torch.no_grad():
@@ -197,26 +203,30 @@ class PDTrainer:
             video_path = os.path.join(logdir, name)
             self.logger.write_videos(step=step, images=tensor, logdir=video_path)
 
-    def save_model(self, e):
-        ### save checkpoint
-        name = f"model_{e}.pth"
-        path = os.path.join(self.logger.checkpoint_dir, name)
-
+    def save_model(self, e, eval_idx=None, force=False):
         model = self.policy.actor
-
-        if model is not None:
-            model = deepcopy(model).to("cpu")
-            torch.save(model.state_dict(), path)
-
-            # save the best model
-            if np.mean(self.last_return_mean) < self.last_max_return_mean:
-                name = f"best_model.pth"
-                path = os.path.join(self.logger.log_dir, name)
-                torch.save(model.state_dict(), path)
-
-                self.last_max_return_mean = np.mean(self.last_return_mean)
-        else:
+        if model is None:
             raise ValueError("Error: Model is not identifiable!!!")
+
+        model_cpu = deepcopy(model).to("cpu")
+
+        # best_model: higher return is better.
+        if np.mean(self.last_return_mean) >= self.last_max_return_mean:
+            best_path = os.path.join(self.logger.log_dir, "best_model.pth")
+            torch.save(model_cpu.state_dict(), best_path)
+            self.last_max_return_mean = np.mean(self.last_return_mean)
+
+        # Periodic step-keyed checkpoint: every 10th eval, or forced (final).
+        periodic_due = (
+            eval_idx is not None and eval_idx > 0 and eval_idx % 10 == 0
+        )
+        if not (force or periodic_due):
+            return
+
+        torch.save(
+            model_cpu.state_dict(),
+            os.path.join(self.logger.checkpoint_dir, f"model_{e}.pth"),
+        )
 
     def visitation_to_rgb(self, visitation_map: np.ndarray) -> np.ndarray:
         visitation_map = np.squeeze(visitation_map)  # Make sure it's 2D

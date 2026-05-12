@@ -59,6 +59,12 @@ class Trainer:
 
         self.last_return_mean = deque(maxlen=1)
 
+        # === Pre-training baseline evaluation ===
+        # Run an eval on the freshly-initialized policy so we have a step-0
+        # baseline in the logs. We do NOT save a checkpoint for this — the
+        # model is untrained and not worth keeping.
+        self._run_eval(step=self.init_timesteps, save=False)
+
         # Train loop
         eval_idx = 0
         total_clock_time = 0
@@ -107,32 +113,38 @@ class Trainer:
 
                     self.write_log(loss_dict, step=step)
 
-                    #### EVALUATIONS ####
-                    if step >= self.eval_interval * eval_idx:
-                        ### Eval Loop
-                        self.policy.eval()
+                    #### Periodic evaluation ####
+                    if step >= self.eval_interval * (eval_idx + 1):
                         eval_idx += 1
-
-                        eval_dict, running_video = self.evaluate()
-
-                        # Manual logging
-                        self.write_log(eval_dict, step=step, eval_log=True)
-                        self.write_video(
-                            running_video,
-                            step=step,
-                            logdir=f"videos",
-                            name="running_video",
-                        )
-
-                        self.last_return_mean.append(eval_dict[f"eval/return_mean"])
-
-                        self.save_model(step)
+                        # Save model+buffer only at every 10th eval; best_model
+                        # is still updated whenever the score improves.
+                        self._run_eval(step=step, save=True, eval_idx=eval_idx)
 
                 torch.cuda.empty_cache()
+
+        # === Final evaluation (always saves checkpoint + replay buffer) ===
+        final_step = pbar.n
+        self._run_eval(step=final_step, save=True, eval_idx=eval_idx + 1, force_save=True)
+
+        # Shut down sampler workers so they don't leak past training.
+        if hasattr(self.sampler, "close"):
+            self.sampler.close()
 
         self.logger.print(
             f"Total {self.policy.name} training time: {(time.time() - start_time) / 3600} hours"
         )
+
+    def _run_eval(self, step, save=False, eval_idx=None, force_save=False):
+        """Run one evaluation pass and (optionally) checkpoint."""
+        self.policy.eval()
+        eval_dict, running_video = self.evaluate()
+        self.write_log(eval_dict, step=step, eval_log=True)
+        self.write_video(
+            running_video, step=step, logdir="videos", name="running_video"
+        )
+        self.last_return_mean.append(eval_dict["eval/return_mean"])
+        if save:
+            self.save_model(step, eval_idx=eval_idx, force=force_save)
 
     def evaluate(self):
         ep_buffer = []
@@ -140,8 +152,9 @@ class Trainer:
         for num_episodes in range(self.eval_num):
             ep_reward, ep_inf = [], []
 
-            # Env initialization
-            state, _ = self.env.reset(seed=self.seed)
+            # Env initialization (vary seed per episode so we don't get
+            # identical rollouts that artificially zero out the std).
+            state, _ = self.env.reset(seed=self.seed + num_episodes)
 
             for t in range(self.episode_len):
                 with torch.no_grad():
@@ -207,24 +220,23 @@ class Trainer:
 
     def average_discounted_return(self, rewards, terminals, gamma):
         """
-        Computes the average discounted return across all episodes, resetting at terminals.
+        Computes the average discounted return across all completed episodes.
 
-        Args:
-            rewards (list or np.array): Sequence of rewards.
-            terminals (list or np.array): Sequence of terminal flags (bool or 0/1).
-            gamma (float): Discount factor.
-
-        Returns:
-            float: Average episodic discounted return.
+        The previous reverse-pass implementation accumulated rewards from
+        a later episode into an earlier episode's return (it never reset G
+        before crossing a terminal). This version groups rewards per
+        episode and discounts each independently.
         """
         episode_returns = []
-        G = 0.0
-        for t in reversed(range(len(rewards))):
-            G = rewards[t] + gamma * G
-            if terminals[t]:
+        ep_rewards = []
+        for r, term in zip(rewards, terminals):
+            ep_rewards.append(float(r))
+            if term:
+                G = 0.0
+                for rr in reversed(ep_rewards):
+                    G = rr + gamma * G
                 episode_returns.append(G)
-                G = 0.0  # reset for the next episode
-
+                ep_rewards = []
         if not episode_returns:
             return 0.0
         return sum(episode_returns) / len(episode_returns)
@@ -253,28 +265,32 @@ class Trainer:
             video_path = os.path.join(logdir, name)
             self.logger.write_videos(step=step, images=tensor, logdir=video_path)
 
-    def save_model(self, e):
-        ### save checkpoint
-        name = f"model_{e}.pth"
-        path = os.path.join(self.logger.checkpoint_dir, name)
-
+    def save_model(self, e, eval_idx=None, force=False):
         model = self.policy.actor
+        if model is None:
+            raise ValueError("Error: Model is not identifiable!!!")
 
-        # store buffer as json files in the model
+        model_cpu = deepcopy(model).to("cpu")
+
+        # Always keep best_model.pth up-to-date (single small file).
+        if np.mean(self.last_return_mean) >= self.last_max_return_mean:
+            best_path = os.path.join(self.logger.log_dir, "best_model.pth")
+            torch.save(model_cpu.state_dict(), best_path)
+            self.last_max_return_mean = np.mean(self.last_return_mean)
+
+        # Periodic step-keyed checkpoint + replay buffer dump only at every
+        # 10th eval or when forced (used by the final eval). The buffer JSON
+        # is large and most intermediate checkpoints are never loaded.
+        periodic_due = (
+            eval_idx is not None and eval_idx > 0 and eval_idx % 10 == 0
+        )
+        if not (force or periodic_due):
+            return
+
+        torch.save(
+            model_cpu.state_dict(),
+            os.path.join(self.logger.checkpoint_dir, f"model_{e}.pth"),
+        )
         self.policy.replay_buffer.save_to_json(
             os.path.join(self.logger.checkpoint_dir, f"replay_buffer_{e}.json")
         )
-
-        if model is not None:
-            model = deepcopy(model).to("cpu")
-            torch.save(model.state_dict(), path)
-
-            # save the best model
-            if np.mean(self.last_return_mean) >= self.last_max_return_mean:
-                name = f"best_model.pth"
-                path = os.path.join(self.logger.log_dir, name)
-                torch.save(model.state_dict(), path)
-
-                self.last_max_return_mean = np.mean(self.last_return_mean)
-        else:
-            raise ValueError("Error: Model is not identifiable!!!")

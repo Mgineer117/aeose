@@ -38,10 +38,10 @@ def get_args():
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=1e-5, help="Base learning rate."
+        "--actor-lr", type=float, default=1e-4, help="Base learning rate."
     )
     parser.add_argument(
-        "--critic-lr", type=float, default=3e-5, help="Base learning rate."
+        "--critic-lr", type=float, default=3e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--eps-clip", type=float, default=0.2, help="Base learning rate."
@@ -58,7 +58,7 @@ def get_args():
     parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
 
     parser.add_argument(
-        "--timesteps", type=int, default=int(1.2e7), help="Number of training epochs."
+        "--timesteps", type=int, default=int(2e7), help="Number of training epochs."
     )
     parser.add_argument(
         "--epochs", type=int, default=int(100000), help="Number of training epochs."
@@ -73,7 +73,7 @@ def get_args():
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
     parser.add_argument("--minibatch-size", type=int, default=4096, help="")
     parser.add_argument("--batch-size", type=int, default=256, help="")
-    parser.add_argument("--K-epochs", type=int, default=30, help="")
+    parser.add_argument("--K-epochs", type=int, default=5, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
@@ -93,6 +93,20 @@ def get_args():
     parser.add_argument(
         "--warmup-samples", type=int, default=1000, help="Base learning rate."
     )
+    # ---- Sampler tuning (PPO) ----
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=0,
+        help="Max sampler worker processes. 0 = auto cap (min(cpu_count-1, 8)).",
+    )
+    parser.add_argument(
+        "--episodes-per-worker",
+        type=int,
+        default=0,
+        help="Episodes each sampler worker runs per collect_samples call. "
+        "0 = auto-derive from batch_size, total workers, and episode_len.",
+    )
     parser.add_argument(
         "--gpu-idx", type=int, default=0, help="Number of training epochs."
     )
@@ -108,14 +122,14 @@ def get_args():
     )
 
     args = parser.parse_args()
-    args.device = select_device(args.gpu_idx)
+    args.device = select_device(args.gpu_idx, verbose=True)
     args.str_actor_fc_dim = str(tuple(args.actor_fc_dim))
     args.str_target_actor_fc_dim = str(tuple(args.target_actor_fc_dim))
 
     return args
 
 
-def select_device(gpu_idx=0, verbose=True):
+def select_device(gpu_idx=0, verbose=False):
     if verbose:
         print(
             "============================================================================================"

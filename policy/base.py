@@ -27,6 +27,15 @@ class Base(nn.Module):
     def to_device(self, device):
         self.device = device
         self.to(device)
+        # nn.Module.to() does not move optimizer state. Without this, CUDA
+        # tensors in optimizer.state survive a "move to CPU" and break
+        # torch.multiprocessing spawn workers with cudaErrorInvalidResourceHandle.
+        for attr in self.__dict__.values():
+            if isinstance(attr, torch.optim.Optimizer):
+                for state in attr.state.values():
+                    for k, v in state.items():
+                        if isinstance(v, torch.Tensor):
+                            state[k] = v.to(device)
 
     def preprocess_state(self, state: torch.Tensor | np.ndarray) -> torch.Tensor:
         """

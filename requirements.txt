@@ -11,3 +11,4 @@ torch
 tqdm
 wandb
 
+scikit-learn            1.8.0

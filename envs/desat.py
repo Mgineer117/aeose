@@ -184,11 +184,14 @@ def get_desat_env():
         ),
         scenario=targets,
         rewarder=(data.UniqueImageReward(), TerminationGuard()),
-        sim_rate=0.5,
-        max_step_duration=300.0,
+        sim_rate=1.0,
+        max_step_duration=600.0,
         time_limit=duration,
         failure_penalty=-10.0,
-        terminate_on_time_limit=True,
+        # Time-limit is an artificial cutoff -> truncation, so V(s') still
+        # bootstraps. Real terminations come from TerminationGuard (battery /
+        # wheel speed / data buffer full).
+        terminate_on_time_limit=False,
         log_level="ERROR",
     )
 

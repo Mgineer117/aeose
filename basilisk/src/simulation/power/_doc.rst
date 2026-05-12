@@ -1,1 +1,0 @@
-This folder contains modules related to the electrical power generation and consumption.  Base classes are provided to related generate power nodes.  Another base class is provided to create power storage devices such as a battery module.

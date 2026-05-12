@@ -10,7 +10,6 @@ from bsk_rl.sim import (
 )  # Imported `world` and configured the simulator to use GroundStationWorldModel with default args so GS contact windows are actually generated and visible
 from bsk_rl.utils.orbital import random_orbit, rv2HN
 
-
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
 # Import GlobalReward and provide a compatibility fallback for NoDataStore
@@ -289,11 +288,13 @@ def get_downlink_env():
             DownlinkReward(),
             TerminationGuard(),
         ),
-        sim_rate=0.5,
-        max_step_duration=300.0,
+        sim_rate=1.0,
+        max_step_duration=600.0,
         time_limit=duration,
         failure_penalty=-10.0,
-        terminate_on_time_limit=True,
+        # Time-limit -> truncation so V(s') still bootstraps. Real terminations
+        # come from TerminationGuard.
+        terminate_on_time_limit=False,
         log_level="ERROR",
         world_type=world.GroundStationWorldModel,  # Verified from cloud environment example, internally configures to use GS contacts with visible windows
         world_args=world.GroundStationWorldModel.default_world_args(),  # Verified from cloud environment example

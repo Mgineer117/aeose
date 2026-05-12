@@ -1,6 +1,0 @@
-breathe
-docutils
-recommonmark
-sphinx
-sphinx_rtd_theme
-sphinx-copybutton
