@@ -63,7 +63,7 @@ class Trainer:
         # Run an eval on the freshly-initialized policy so we have a step-0
         # baseline in the logs. We do NOT save a checkpoint for this — the
         # model is untrained and not worth keeping.
-        self._run_eval(step=self.init_timesteps, save=False)
+        self._run_eval(step=self.init_timesteps, save=True)
 
         # Train loop
         eval_idx = 0
@@ -116,15 +116,18 @@ class Trainer:
                     #### Periodic evaluation ####
                     if step >= self.eval_interval * (eval_idx + 1):
                         eval_idx += 1
-                        # Save model+buffer only at every 10th eval; best_model
-                        # is still updated whenever the score improves.
-                        self._run_eval(step=step, save=True, eval_idx=eval_idx)
+                        # Run eval without saving; only final eval saves checkpoint
+                        self._run_eval(
+                            step=step, save=True, eval_idx=eval_idx, force_save=True
+                        )
 
                 torch.cuda.empty_cache()
 
         # === Final evaluation (always saves checkpoint + replay buffer) ===
         final_step = pbar.n
-        self._run_eval(step=final_step, save=True, eval_idx=eval_idx + 1, force_save=True)
+        self._run_eval(
+            step=final_step, save=True, eval_idx=eval_idx + 1, force_save=True
+        )
 
         # Shut down sampler workers so they don't leak past training.
         if hasattr(self.sampler, "close"):
@@ -278,13 +281,8 @@ class Trainer:
             torch.save(model_cpu.state_dict(), best_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
-        # Periodic step-keyed checkpoint + replay buffer dump only at every
-        # 10th eval or when forced (used by the final eval). The buffer JSON
-        # is large and most intermediate checkpoints are never loaded.
-        periodic_due = (
-            eval_idx is not None and eval_idx > 0 and eval_idx % 10 == 0
-        )
-        if not (force or periodic_due):
+        # Only save checkpoint + replay buffer when forced (final eval).
+        if not force:
             return
 
         torch.save(

@@ -65,19 +65,19 @@ def get_args():
     )
 
     parser.add_argument(
-        "--log-interval", type=int, default=100, help="Number of training epochs."
+        "--log-interval", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument(
         "--eval-num", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
-    parser.add_argument("--minibatch-size", type=int, default=4096, help="")
+    parser.add_argument("--minibatch-size", type=int, default=2048, help="")
     parser.add_argument("--batch-size", type=int, default=256, help="")
     parser.add_argument("--K-epochs", type=int, default=5, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
-        default=0.01,
+        default=0.03,
         help="Upper bound of the eigenvalue of the dual metric.",
     )
     parser.add_argument(

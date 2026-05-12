@@ -20,8 +20,10 @@ class Base:
         self.batch_size = kwargs.get("batch_size")
 
 
-def _build_buffer(num_episodes_per_worker, episode_len, state_dim, action_dim):
-    size = (num_episodes_per_worker + 1) * episode_len
+def _build_buffer(num_samples_per_worker, state_dim, action_dim):
+    """Pre-allocate buffer for a fixed number of samples (not episodes)."""
+    # Add extra capacity to handle edge cases
+    size = num_samples_per_worker + 100
     return dict(
         states=np.full(((size,) + state_dim), np.nan, dtype=np.float32),
         next_states=np.full(((size,) + state_dim), np.nan, dtype=np.float32),
@@ -40,14 +42,28 @@ def _build_buffer(num_episodes_per_worker, episode_len, state_dim, action_dim):
 
 
 def _run_episodes(
-    policy, env, seed, deterministic,
-    num_episodes_per_worker, episode_len, state_dim, action_dim,
+    policy,
+    env,
+    seed,
+    deterministic,
+    num_samples_per_worker,
+    episode_len,
+    state_dim,
+    action_dim,
 ):
-    data = _build_buffer(num_episodes_per_worker, episode_len, state_dim, action_dim)
+    """Collect exactly num_samples_per_worker samples by running full episodes,
+    continuing across episode boundaries until the sample count is reached."""
+    data = _build_buffer(num_samples_per_worker, state_dim, action_dim)
     current_time = 0
-    for ep in range(num_episodes_per_worker):
+    ep = 0
+
+    while current_time < num_samples_per_worker:
         state, _ = env.reset(seed=seed + ep)
         for t in range(episode_len):
+            # Stop if we've collected enough samples
+            if current_time >= num_samples_per_worker:
+                break
+
             with torch.no_grad():
                 a, metaData = policy(state, deterministic=deterministic)
                 a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
@@ -58,7 +74,9 @@ def _run_episodes(
             try:
                 next_state, rew, term, trunc, _ = env.step(np.argmax(a))
             except Exception as exc:
-                print(f"[sampler] env.step raised: {exc!r}. Ending episode as truncated.")
+                print(
+                    f"[sampler] env.step raised: {exc!r}. Ending episode as truncated."
+                )
                 next_state = state
                 rew = 0.0
                 term = False
@@ -69,7 +87,7 @@ def _run_episodes(
                 trunc = True
 
             done = bool(term) or bool(trunc)
-            idx = current_time + t
+            idx = current_time
             data["states"][idx] = state
             data["next_states"][idx] = next_state
             data["actions"][idx] = a
@@ -79,18 +97,32 @@ def _run_episodes(
             data["terminals"][idx] = float(done)
             data["logprobs"][idx] = metaData["logprobs"].cpu().detach().numpy()
             data["entropys"][idx] = metaData["entropy"].cpu().detach().numpy()
-            if done:
-                current_time += t + 1
-                break
-            state = next_state
+
+            current_time += 1
+            if not done:
+                state = next_state
+            else:
+                break  # Episode ended, will start a new one on next loop iteration
+
+        ep += 1
+
+    # Trim buffer to exact number of samples collected
     for k in data:
-        data[k] = data[k][:current_time]
+        data[k] = data[k][:num_samples_per_worker]
+
     return data
 
 
 def _worker_loop(
-    pid, task_q, result_q, policy, env_name,
-    num_episodes_per_worker, episode_len, state_dim, action_dim,
+    pid,
+    task_q,
+    result_q,
+    policy,
+    env_name,
+    num_samples_per_worker,
+    episode_len,
+    state_dim,
+    action_dim,
 ):
     """Persistent fork worker: creates env once and processes rollout requests until exit."""
     # Workers must stay CPU-only. The CUDA context inherited via fork is not
@@ -118,12 +150,19 @@ def _worker_loop(
             torch.manual_seed(worker_seed)
 
             data = _run_episodes(
-                policy, env, worker_seed, deterministic,
-                num_episodes_per_worker, episode_len, state_dim, action_dim,
+                policy,
+                env,
+                worker_seed,
+                deterministic,
+                num_samples_per_worker,
+                episode_len,
+                state_dim,
+                action_dim,
             )
             result_q.put((pid, data))
         except Exception:
             import traceback
+
             traceback.print_exc()
             result_q.put((pid, None))
 
@@ -174,25 +213,20 @@ class OnlineSampler(Base):
         else:
             max_workers = min(cpu_cap, 8)
 
-        # Sizing: if the caller pinned episodes-per-worker, honor it; otherwise
-        # start from 4 and clamp via the worker cap, then bump episodes per
-        # worker so total samples stay close to batch_size.
-        seed_eps = episodes_per_worker if episodes_per_worker > 0 else 4
-        naive_total = ceil(batch_size / (seed_eps * episode_len))
-        self.total_num_worker = max(1, min(naive_total, max_workers))
-        if episodes_per_worker > 0:
-            self.num_episodes_per_worker = max(1, episodes_per_worker)
-        else:
-            self.num_episodes_per_worker = max(
-                1, ceil(batch_size / (self.total_num_worker * episode_len))
-            )
+        # Calculate samples per worker (independent of episode boundaries).
+        # Total samples target is batch_size; distribute across workers.
+        self.total_num_worker = max(1, min(ceil(batch_size / episode_len), max_workers))
+        self.num_samples_per_worker = max(
+            episode_len, ceil(batch_size / self.total_num_worker)
+        )
 
         if verbose:
             print("Sampling Parameters:")
             print(f"Total number of workers:     {self.total_num_worker}")
-            print(f"Episodes per worker / call:  {self.num_episodes_per_worker}")
-            print(f"Approx samples per call:     "
-                  f"{self.total_num_worker * self.num_episodes_per_worker * episode_len}")
+            print(f"Samples per worker / call:   {self.num_samples_per_worker}")
+            print(
+                f"Approx total samples/call:   {self.total_num_worker * self.num_samples_per_worker}"
+            )
 
         torch.set_num_threads(1)  # avoid CPU oversubscription in parent
 
@@ -229,9 +263,15 @@ class OnlineSampler(Base):
         p = self._ctx.Process(
             target=_worker_loop,
             args=(
-                i, task_q, self._result_queue, policy, self.env_name,
-                self.num_episodes_per_worker, self.episode_len,
-                self.state_dim, self.action_dim,
+                i,
+                task_q,
+                self._result_queue,
+                policy,
+                self.env_name,
+                self.num_samples_per_worker,
+                self.episode_len,
+                self.state_dim,
+                self.action_dim,
             ),
             daemon=True,
         )
@@ -334,7 +374,8 @@ class OnlineSampler(Base):
                     collected += 1
                 except Empty:
                     missing = [
-                        i for i in range(self.total_num_worker)
+                        i
+                        for i in range(self.total_num_worker)
                         if worker_memories[i] is None
                     ]
                     print(
@@ -353,7 +394,8 @@ class OnlineSampler(Base):
                 for key, val in wm.items():
                     memory[key] = (
                         np.concatenate((memory[key], val), axis=0)
-                        if key in memory else val
+                        if key in memory
+                        else val
                     )
         else:
             # Sequential fallback: build a single env in-process and roll out.
@@ -371,14 +413,20 @@ class OnlineSampler(Base):
                     random.seed(worker_seed)
                     torch.manual_seed(worker_seed)
                     wm = _run_episodes(
-                        policy, env, worker_seed, deterministic,
-                        self.num_episodes_per_worker, self.episode_len,
-                        self.state_dim, self.action_dim,
+                        policy,
+                        env,
+                        worker_seed,
+                        deterministic,
+                        self.num_samples_per_worker,
+                        self.episode_len,
+                        self.state_dim,
+                        self.action_dim,
                     )
                     for key, val in wm.items():
                         memory[key] = (
                             np.concatenate((memory[key], val), axis=0)
-                            if key in memory else val
+                            if key in memory
+                            else val
                         )
             finally:
                 env.close()
