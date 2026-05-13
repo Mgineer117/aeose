@@ -13,7 +13,7 @@
 #SBATCH --mail-user=minjae5@illinois.edu
 
 source ~/.bashrc
-conda activate aeose
+conda activate aeos
 
 ENV=desat
 
