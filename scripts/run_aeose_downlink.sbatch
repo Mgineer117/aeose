@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=aeose_downlink
 #SBATCH --account=huytran1-ic
-#SBATCH --partition=csl
+#SBATCH --partition=IllinoisCompute-GPU
 #SBATCH --nodes=1
 #SBATCH --ntasks=18
 #SBATCH --cpus-per-task=4
