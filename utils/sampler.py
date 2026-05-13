@@ -255,8 +255,8 @@ class OnlineSampler(Base):
         # First call pays the Basilisk-import cost in every worker; later
         # calls are just a state_dict broadcast + rollout. Generous timeout
         # for round 1, tighter steady-state timeout afterwards.
-        self._first_round_timeout = 900
-        self._steady_timeout = 600
+        self._first_round_timeout = 1800
+        self._steady_timeout = 1200
 
     def _spawn_one(self, i, policy):
         task_q = self._ctx.Queue()
