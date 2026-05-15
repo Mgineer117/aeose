@@ -3,6 +3,16 @@ import json
 from copy import deepcopy
 
 import torch
+import torch.nn as nn
+
+
+_ACTIVATIONS = {
+    "tanh": nn.Tanh,
+    "relu": nn.ReLU,
+    "leakyrelu": nn.LeakyReLU,
+    "elu": nn.ELU,
+    "gelu": nn.GELU,
+}
 
 
 def get_args():
@@ -56,6 +66,13 @@ def get_args():
         "--target-actor-fc-dim", type=int, nargs="+", default=[1024, 1024]
     )
     parser.add_argument("--critic-fc-dim", type=int, nargs="+", default=[256, 256])
+    parser.add_argument(
+        "--activation",
+        type=str,
+        default="tanh",
+        choices=list(_ACTIVATIONS.keys()),
+        help="Activation function used in the actor and critic MLPs.",
+    )
 
     parser.add_argument(
         "--timesteps", type=int, default=int(1e7), help="Number of training epochs."
@@ -71,9 +88,9 @@ def get_args():
         "--eval-num", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument("--num-minibatch", type=int, default=3, help="")
-    parser.add_argument("--minibatch-size", type=int, default=2000, help="")
+    parser.add_argument("--minibatch-size", type=int, default=8000, help="")
     parser.add_argument("--batch-size", type=int, default=256, help="")
-    parser.add_argument("--K-epochs", type=int, default=5, help="")
+    parser.add_argument("--K-epochs", type=int, default=10, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
@@ -97,7 +114,7 @@ def get_args():
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=0,
+        default=8,
         help="Max sampler worker processes. 0 = auto cap (min(cpu_count-1, 8)).",
     )
     parser.add_argument(
@@ -106,6 +123,37 @@ def get_args():
         default=0,
         help="Episodes each sampler worker runs per collect_samples call. "
         "0 = auto-derive from batch_size, total workers, and episode_len.",
+    )
+    parser.add_argument(
+        "--envs-per-worker",
+        type=int,
+        default=4,
+        help="Number of Basilisk envs hosted inside each sampler worker. "
+        ">1 enables vectorized rollout with batched policy inference. Each "
+        "extra env adds to that worker's cold-start time, so combine with "
+        "a larger --first-round-timeout on the cluster.",
+    )
+    parser.add_argument(
+        "--async-sampling",
+        action="store_true",
+        help="Overlap sampler rollouts with the SGD update by dispatching "
+        "the next batch before policy.learn(). Introduces 1 step of policy "
+        "staleness (rollout uses pre-update weights); safe under PPO's "
+        "target_kl bound but a small deviation from strict on-policy.",
+    )
+    parser.add_argument(
+        "--first-round-timeout",
+        type=int,
+        default=7200,
+        help="Seconds to wait for the first sampler batch before respawning "
+        "workers. First round pays the Basilisk/SPICE import cost; raise on "
+        "cluster runs with cold NFS-backed SPICE kernels.",
+    )
+    parser.add_argument(
+        "--steady-timeout",
+        type=int,
+        default=2400,
+        help="Seconds to wait for each subsequent sampler batch.",
     )
     parser.add_argument(
         "--gpu-idx", type=int, default=0, help="Number of training epochs."
@@ -125,6 +173,10 @@ def get_args():
     args.device = select_device(args.gpu_idx, verbose=True)
     args.str_actor_fc_dim = str(tuple(args.actor_fc_dim))
     args.str_target_actor_fc_dim = str(tuple(args.target_actor_fc_dim))
+    # Keep the string for logging; resolve to a fresh nn.Module instance at
+    # the call site (each network gets its own instance).
+    args.activation_name = args.activation
+    args.activation = _ACTIVATIONS[args.activation]
 
     return args
 

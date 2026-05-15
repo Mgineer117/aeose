@@ -31,6 +31,7 @@ class Trainer:
         eval_num: int = 10,
         rendering: bool = False,
         seed: int = 0,
+        async_sampling: bool = False,
     ) -> None:
         self.env = env
         self.policy = policy
@@ -53,6 +54,7 @@ class Trainer:
 
         self.rendering = rendering
         self.seed = seed
+        self.async_sampling = async_sampling
 
     def train(self) -> dict[str, float]:
         start_time = time.time()
@@ -68,18 +70,37 @@ class Trainer:
         # Train loop
         eval_idx = 0
         total_clock_time = 0
+        # Kick off the first rollout before entering the loop so the very
+        # first `gather()` returns something. Subsequent dispatches are
+        # issued right after gather() but before learn(), which lets the
+        # workers run the next rollout concurrently with the SGD update at
+        # the cost of one step of policy staleness.
+        if self.async_sampling:
+            self.sampler.dispatch(self.policy, seed=self.seed)
+        total = self.timesteps + self.init_timesteps
         with tqdm(
-            total=self.timesteps + self.init_timesteps,
+            total=total,
             initial=self.init_timesteps,
             desc=f"{self.policy.name} Training (Timesteps)",
         ) as pbar:
-            while pbar.n < self.timesteps + self.init_timesteps:
+            while pbar.n < total:
                 step = pbar.n + 1  # + 1 to avoid zero division
                 self.policy.train()
 
-                batch, sample_time = self.sampler.collect_samples(
-                    policy=self.policy, seed=self.seed
-                )
+                if self.async_sampling:
+                    batch, sample_time = self.sampler.gather(self.policy)
+                    # Estimate whether we'll need at least one more batch;
+                    # if so, dispatch now so workers roll while we learn.
+                    expected_per_call = (
+                        self.sampler.total_num_worker
+                        * self.sampler.num_samples_per_worker
+                    )
+                    if pbar.n + expected_per_call < total:
+                        self.sampler.dispatch(self.policy, seed=self.seed)
+                else:
+                    batch, sample_time = self.sampler.collect_samples(
+                        policy=self.policy, seed=self.seed
+                    )
                 if "states" in batch:
                     loss_dict, timesteps, update_time = self.policy.learn(batch)
 
@@ -128,6 +149,14 @@ class Trainer:
         self._run_eval(
             step=final_step, save=True, eval_idx=eval_idx + 1, force_save=True
         )
+
+        # Drain any in-flight async-dispatched batch before shutting workers
+        # down, otherwise the result_queue can hold an orphaned rollout.
+        if self.async_sampling and hasattr(self.sampler, "drain"):
+            try:
+                self.sampler.drain(self.policy)
+            except Exception:
+                pass
 
         # Shut down sampler workers so they don't leak past training.
         if hasattr(self.sampler, "close"):

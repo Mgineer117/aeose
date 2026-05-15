@@ -428,9 +428,9 @@ class EclipseGroundStationWorld(
 duration = 5700.0 * 5  # 5 orbits
 max_step_duration = 300.0
 
-target_distribution = "cities"
-n_targets = 3000
-n_ahead = 32
+target_distribution = "uniform"
+n_targets = 135
+n_ahead = 3
 
 if target_distribution == "uniform":
     targets = scene.UniformTargets(n_targets)

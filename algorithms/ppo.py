@@ -31,6 +31,9 @@ class PPO_Algorithm(nn.Module):
             batch_size=int(self.args.minibatch_size * self.args.num_minibatch),
             num_workers=getattr(self.args, "num_workers", 0),
             episodes_per_worker=getattr(self.args, "episodes_per_worker", 0),
+            envs_per_worker=getattr(self.args, "envs_per_worker", 1),
+            first_round_timeout=getattr(self.args, "first_round_timeout", 3600),
+            steady_timeout=getattr(self.args, "steady_timeout", 1200),
         )
 
         trainer = Trainer(
@@ -45,6 +48,7 @@ class PPO_Algorithm(nn.Module):
             eval_num=self.args.eval_num,
             rendering=self.args.rendering,
             seed=self.args.seed,
+            async_sampling=getattr(self.args, "async_sampling", False),
         )
 
         trainer.train()
@@ -63,9 +67,14 @@ class PPO_Algorithm(nn.Module):
             hidden_dim=self.args.actor_fc_dim,
             action_dim=self.args.action_dim,
             is_discrete=self.args.is_discrete,
+            activation=self.args.activation(),
             device=self.args.device,
         )
-        critic = PPO_Critic(self.args.state_dim, hidden_dim=self.args.critic_fc_dim)
+        critic = PPO_Critic(
+            self.args.state_dim,
+            hidden_dim=self.args.critic_fc_dim,
+            activation=self.args.activation(),
+        )
 
         self.policy = PPO_Learner(
             actor=actor,
