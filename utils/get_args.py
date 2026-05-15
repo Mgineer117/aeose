@@ -87,8 +87,8 @@ def get_args():
     parser.add_argument(
         "--eval-num", type=int, default=10, help="Number of training epochs."
     )
-    parser.add_argument("--num-minibatch", type=int, default=3, help="")
-    parser.add_argument("--minibatch-size", type=int, default=8000, help="")
+    parser.add_argument("--num-minibatch", type=int, default=4, help="")
+    parser.add_argument("--minibatch-size", type=int, default=3000, help="")
     parser.add_argument("--batch-size", type=int, default=256, help="")
     parser.add_argument("--K-epochs", type=int, default=10, help="")
     parser.add_argument(
@@ -114,7 +114,7 @@ def get_args():
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=8,
+        default=3,
         help="Max sampler worker processes. 0 = auto cap (min(cpu_count-1, 8)).",
     )
     parser.add_argument(
