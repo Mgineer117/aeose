@@ -13,10 +13,14 @@ you can see the compute-time impact of the sampling method directly.
 """
 
 import time
+from pathlib import Path
+import sys
 
 import numpy as np
 import torch
 import torch.nn as nn
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from utils.get_env import get_env
 
