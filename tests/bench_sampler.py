@@ -148,6 +148,7 @@ if __name__ == "__main__":
     probe_env.close()
 
     policy = _SimplePolicy(obs_dim=obs_dim, action_dim=action_dim, hidden_dim=256)
+    policy = policy.to(device)
     policy.eval()
 
     print("Warming up...")
