@@ -34,7 +34,9 @@ class PPO_Algorithm(nn.Module):
             action_dim=self.args.action_dim,
             episode_len=self.env.max_steps,
             batch_size=int(self.args.minibatch_size * self.args.num_minibatch),
+            num_workers=max(1, int(getattr(self.args, "num_workers", 3))),
             envs_per_worker=envs_per_worker,
+            sampler_mode=getattr(self.args, "sampler_mode", "vectorized"),
         )
 
         trainer = Trainer(

@@ -85,12 +85,13 @@ class PPO_Learner(Base):
 
         # Store batch data in replay buffer
         for i in range(batch["states"].shape[0]):
+            # Use `dones` (terminal OR truncation) from the sampler buffer
             self.replay_buffer.append(
                 batch["states"][i],
                 batch["actions"][i],
                 batch["next_states"][i],
                 batch["rewards"][i],
-                batch["terminals"][i],
+                batch.get("dones", batch.get("terminals"))[i],
             )
 
         # Ingredients: Convert batch data to tensors

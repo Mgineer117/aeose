@@ -130,6 +130,13 @@ def get_args():
         help="Number of envs batched together in the in-process vectorized sampler.",
     )
     parser.add_argument(
+        "--sampler-mode",
+        type=str,
+        default="vectorized",
+        choices=["vectorized", "forkserver"],
+        help="Sampler backend: in-process vectorized env stepping or forkserver workers.",
+    )
+    parser.add_argument(
         "--async-sampling",
         action="store_true",
         help="Overlap sampler rollouts with the SGD update by dispatching "

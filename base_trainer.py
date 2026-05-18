@@ -128,7 +128,7 @@ class Trainer:
                     )  # Convert to hours
                     loss_dict[f"{self.policy.name}/analytics/discounted_return"] = (
                         self.average_discounted_return(
-                            batch["rewards"], batch["terminals"], self.policy.gamma
+                            batch["rewards"], batch.get("dones", batch.get("terminals")), self.policy.gamma
                         )
                     )
 
