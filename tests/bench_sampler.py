@@ -23,6 +23,7 @@ import torch.nn as nn
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from utils.get_env import get_env
+import multiprocessing as mp
 
 
 class _SimplePolicy(nn.Module):
@@ -61,7 +62,12 @@ def _build_vector_envs(env_name: str, n_envs: int):
 
 def bench_serial(env_name, policy, total_steps, device="cpu"):
     env = get_env(env_name)
+    t_reset = 0.0
+    resets = 0
+    _t = time.time()
     obs, _ = env.reset(seed=0)
+    t_reset += time.time() - _t
+    resets += 1
     t0 = time.time()
     t_policy = 0.0
     t_step = 0.0
@@ -78,18 +84,29 @@ def bench_serial(env_name, policy, total_steps, device="cpu"):
         steps += 1
 
         if terminated or truncated:
+            _t = time.time()
             obs, _ = env.reset(seed=steps)
+            t_reset += time.time() - _t
+            resets += 1
 
     total = time.time() - t0
-    env.close()
-    return {"total": total, "policy": t_policy, "step": t_step, "steps": steps}
+    try:
+        env.close()
+    except Exception:
+        pass
+    return {"total": total, "policy": t_policy, "step": t_step, "reset": t_reset, "steps": steps, "resets": resets}
 
 
 def bench_vectorized(env_name, policy, total_steps, num_envs, device="cpu"):
     envs = _build_vector_envs(env_name, num_envs)
     obs_batch = []
+    t_reset = 0.0
+    resets = 0
     for idx, env in enumerate(envs):
+        _t = time.time()
         obs, _ = env.reset(seed=idx)
+        t_reset += time.time() - _t
+        resets += 1
         obs_batch.append(obs)
 
     t0 = time.time()
@@ -110,21 +127,186 @@ def bench_vectorized(env_name, policy, total_steps, num_envs, device="cpu"):
             obs, _, terminated, truncated, _ = env.step(int(actions[idx]))
             steps += 1
             if terminated or truncated:
+                _rt = time.time()
                 obs, _ = env.reset(seed=steps + idx)
+                t_reset += time.time() - _rt
+                resets += 1
             next_obs_batch.append(obs)
         t_step += time.time() - _t
         obs_batch = next_obs_batch if next_obs_batch else obs_batch
 
     total = time.time() - t0
     for env in envs:
+        try:
+            env.close()
+        except Exception:
+            pass
+    return {"total": total, "policy": t_policy, "step": t_step, "reset": t_reset, "steps": steps, "resets": resets}
+
+
+def _forkserver_worker(conn, env_name, seed_offset=0):
+    try:
+        env = get_env(env_name)
+    except Exception as exc:
+        conn.send({'error': str(exc)})
+        conn.close()
+        return
+
+    t_step = 0.0
+    t_reset = 0.0
+    n_resets = 0
+
+    # initial reset
+    _t = time.time()
+    try:
+        obs, _ = env.reset(seed=seed_offset)
+    except Exception:
+        obs = None
+    t_reset += time.time() - _t
+    n_resets += 1
+    conn.send(('obs', obs))
+
+    while True:
+        try:
+            msg = conn.recv()
+        except EOFError:
+            break
+        if not msg:
+            continue
+        cmd = msg[0]
+        if cmd == 'act':
+            action = msg[1]
+            _t = time.time()
+            try:
+                obs, _, term, trunc, _ = env.step(int(action))
+            except Exception:
+                obs = None
+                term = False
+                trunc = True
+            t_step += time.time() - _t
+            if term or trunc:
+                _rt = time.time()
+                try:
+                    obs, _ = env.reset(seed=seed_offset + n_resets)
+                except Exception:
+                    obs = None
+                t_reset += time.time() - _rt
+                n_resets += 1
+            conn.send(('obs', obs, bool(term), bool(trunc)))
+        elif cmd == 'close':
+            break
+
+    try:
         env.close()
-    return {"total": total, "policy": t_policy, "step": t_step, "steps": steps}
+    except Exception:
+        pass
+
+    # send back timings
+    try:
+        conn.send({'step': t_step, 'reset': t_reset, 'n_resets': n_resets})
+    except Exception:
+        pass
+    conn.close()
+
+
+def bench_forkserver(env_name, policy, total_steps, num_envs, device="cpu"):
+    ctx = mp.get_context('forkserver')
+    conns = []
+    procs = []
+    for i in range(num_envs):
+        parent_conn, child_conn = ctx.Pipe()
+        p = ctx.Process(target=_forkserver_worker, args=(child_conn, env_name, i))
+        p.daemon = True
+        p.start()
+        child_conn.close()
+        conns.append(parent_conn)
+        procs.append(p)
+
+    # receive initial observations
+    obs_batch = []
+    for conn in conns:
+        msg = conn.recv()
+        if isinstance(msg, dict) and msg.get('error'):
+            raise RuntimeError(f"Worker error: {msg['error']}")
+        if msg[0] == 'obs':
+            obs_batch.append(msg[1])
+
+    t0 = time.time()
+    t_policy = 0.0
+    t_roundtrip = 0.0
+    steps = 0
+
+    while steps < total_steps:
+        _t = time.time()
+        actions = _policy_forward(policy, obs_batch, device=device)
+        t_policy += time.time() - _t
+
+        # send actions and collect responses
+        _t = time.time()
+        for idx, conn in enumerate(conns):
+            if steps >= total_steps:
+                break
+            conn.send(('act', int(actions[idx])))
+        # gather
+        next_obs = []
+        for conn in conns:
+            if steps >= total_steps:
+                # drain any remaining replies
+                try:
+                    _ = conn.recv()
+                except Exception:
+                    pass
+                continue
+            try:
+                msg = conn.recv()
+            except Exception:
+                msg = ('obs', None)
+            if msg[0] == 'obs':
+                # could be ( 'obs', obs ) or ('obs', obs, term, trunc)
+                if len(msg) >= 4:
+                    obs, term, trunc = msg[1], msg[2], msg[3]
+                else:
+                    obs = msg[1]
+                    term = False
+                    trunc = False
+                next_obs.append(obs)
+                steps += 1
+        t_roundtrip += time.time() - _t
+        obs_batch = next_obs if next_obs else obs_batch
+
+    total = time.time() - t0
+
+    # close workers and collect timings
+    worker_timings = []
+    for conn, p in zip(conns, procs):
+        try:
+            conn.send(('close',))
+        except Exception:
+            pass
+    for conn, p in zip(conns, procs):
+        try:
+            t = conn.recv()
+            if isinstance(t, dict):
+                worker_timings.append(t)
+        except Exception:
+            pass
+    for p in procs:
+        try:
+            p.join(timeout=1.0)
+        except Exception:
+            pass
+
+    t_step = sum(w.get('step', 0.0) for w in worker_timings)
+    t_reset = sum(w.get('reset', 0.0) for w in worker_timings)
+
+    return {"total": total, "policy": t_policy, "roundtrip": t_roundtrip, "step": t_step, "reset": t_reset, "steps": steps}
 
 
 if __name__ == "__main__":
     ENV_NAME = "downlink"
     TOTAL_STEPS = 128
     NUM_ENVS = 4
+    NUM_TRIALS = 10
 
     print("=" * 70)
     print("BENCHMARK: serial vs vectorized sampling on downlink")
@@ -145,7 +327,10 @@ if __name__ == "__main__":
     obs, _ = probe_env.reset(seed=0)
     obs_dim = int(np.asarray(obs).size)
     action_dim = int(probe_env.action_space.n)
-    probe_env.close()
+    try:
+        probe_env.close()
+    except Exception:
+        pass
 
     policy = _SimplePolicy(obs_dim=obs_dim, action_dim=action_dim, hidden_dim=256)
     policy = policy.to(device)
@@ -156,25 +341,74 @@ if __name__ == "__main__":
     print()
 
     print("─" * 70)
-    print("[1] Serial sampling")
+    print("[1] Serial sampling — running multiple trials")
     print("─" * 70)
-    serial_result = bench_serial(ENV_NAME, policy, TOTAL_STEPS, device=device)
-    serial_sps = serial_result["steps"] / serial_result["total"]
-    print(f"  Total time:          {serial_result['total']:.3f}s")
-    print(f"    ├─ Policy time:    {serial_result['policy']:.3f}s")
-    print(f"    └─ Env.step time:  {serial_result['step']:.3f}s")
-    print(f"  Steps/sec:           {serial_sps:.0f}")
+    serial_runs = []
+    for i in range(NUM_TRIALS):
+        r = bench_serial(ENV_NAME, policy, TOTAL_STEPS, device=device)
+        serial_runs.append(r)
+
+    serial_totals = np.array([r['total'] for r in serial_runs])
+    serial_policies = np.array([r['policy'] for r in serial_runs])
+    serial_steps_time = np.array([r['step'] for r in serial_runs])
+    serial_resets = np.array([r.get('reset', 0.0) for r in serial_runs])
+    serial_steps = np.array([r['steps'] for r in serial_runs])
+
+    serial_sps = serial_steps.sum() / serial_totals.sum()
+    print(f"  Trials:              {NUM_TRIALS}")
+    print(f"  Total time (mean±std):      {serial_totals.mean():.3f}s ± {serial_totals.std():.3f}s")
+    print(f"    ├─ Policy time (mean):     {serial_policies.mean():.3f}s")
+    print(f"    ├─ Env.step time (mean):   {serial_steps_time.mean():.3f}s")
+    print(f"    └─ Reset time (mean):      {serial_resets.mean():.3f}s")
+    print(f"  Steps total:          {serial_steps.sum()}  Steps/sec overall: {serial_sps:.1f}")
     print()
 
     print("─" * 70)
-    print("[2] Vectorized + batched policy inference")
+    print("[2] Vectorized + batched policy inference — running multiple trials")
     print("─" * 70)
-    vector_result = bench_vectorized(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
-    vector_sps = vector_result["steps"] / vector_result["total"]
-    print(f"  Total time:          {vector_result['total']:.3f}s")
-    print(f"    ├─ Policy time:    {vector_result['policy']:.3f}s")
-    print(f"    └─ Env.step time:  {vector_result['step']:.3f}s")
-    print(f"  Steps/sec:           {vector_sps:.0f}")
+    vector_runs = []
+    for i in range(NUM_TRIALS):
+        r = bench_vectorized(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
+        vector_runs.append(r)
+
+    vector_totals = np.array([r['total'] for r in vector_runs])
+    vector_policies = np.array([r['policy'] for r in vector_runs])
+    vector_steps_time = np.array([r['step'] for r in vector_runs])
+    vector_resets = np.array([r.get('reset', 0.0) for r in vector_runs])
+    vector_steps = np.array([r['steps'] for r in vector_runs])
+
+    vector_sps = vector_steps.sum() / vector_totals.sum()
+    print(f"  Trials:              {NUM_TRIALS}")
+    print(f"  Total time (mean±std):      {vector_totals.mean():.3f}s ± {vector_totals.std():.3f}s")
+    print(f"    ├─ Policy time (mean):     {vector_policies.mean():.3f}s")
+    print(f"    ├─ Env.step time (mean):   {vector_steps_time.mean():.3f}s")
+    print(f"    └─ Reset time (mean):      {vector_resets.mean():.3f}s")
+    print(f"  Steps total:          {vector_steps.sum()}  Steps/sec overall: {vector_sps:.1f}")
+    print()
+
+    print("─" * 70)
+    print("[3] Forkserver worker baseline — parent policy, worker env.step")
+    print("─" * 70)
+    fork_runs = []
+    for i in range(NUM_TRIALS):
+        r = bench_forkserver(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
+        fork_runs.append(r)
+
+    fork_totals = np.array([r['total'] for r in fork_runs])
+    fork_policies = np.array([r['policy'] for r in fork_runs])
+    fork_roundtrips = np.array([r.get('roundtrip', 0.0) for r in fork_runs])
+    fork_steps_time = np.array([r['step'] for r in fork_runs])
+    fork_resets = np.array([r.get('reset', 0.0) for r in fork_runs])
+    fork_steps = np.array([r['steps'] for r in fork_runs])
+
+    fork_sps = fork_steps.sum() / fork_totals.sum()
+    print(f"  Trials:              {NUM_TRIALS}")
+    print(f"  Total time (mean±std):      {fork_totals.mean():.3f}s ± {fork_totals.std():.3f}s")
+    print(f"    ├─ Policy time (mean):     {fork_policies.mean():.3f}s")
+    print(f"    ├─ Roundtrip (send/recv)    {fork_roundtrips.mean():.3f}s")
+    print(f"    ├─ Env.step time (sum mean):{fork_steps_time.mean():.3f}s")
+    print(f"    └─ Reset time (mean):      {fork_resets.mean():.3f}s")
+    print(f"  Steps total:          {fork_steps.sum()}  Steps/sec overall: {fork_sps:.1f}")
     print()
 
     print("=" * 70)
@@ -183,8 +417,9 @@ if __name__ == "__main__":
     print()
     print(f"  {'Method':<42} {'Steps/s':>8} {'Speedup':>8}")
     print(f"  {'─' * 42} {'─' * 8} {'─' * 8}")
-    print(f"  {'[1] Serial sampling':<42} {serial_sps:>8.0f} {'1.0x':>8}")
-    print(f"  {'[2] Vectorized sampling':<42} {vector_sps:>8.0f} {vector_sps / serial_sps:>7.1f}x")
+    print(f"  {'[1] Serial sampling':<42} {serial_sps:>8.1f} {'1.0x':>8}")
+    print(f"  {'[2] Vectorized sampling':<42} {vector_sps:>8.1f} {vector_sps / serial_sps:>7.2f}x")
+    print(f"  {'[3] Forkserver sampling':<42} {fork_sps:>8.1f} {fork_sps / serial_sps:>7.2f}x")
     print()
 
     print("Key takeaway:")
