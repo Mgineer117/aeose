@@ -456,7 +456,7 @@ def get_downlink_env():
         sim_rate=0.5,
         max_step_duration=max_step_duration,
         time_limit=duration,
-        failure_penalty=-10.0,
+        failure_penalty=-1.0,
         # Keeping previous time-limit behavior:
         # the episode time limit is treated separately from real failures.
         terminate_on_time_limit=False,

@@ -9,7 +9,7 @@ import torch.nn as nn
 _ACTIVATIONS = {
     "tanh": nn.Tanh,
     "relu": nn.ReLU,
-    "leakyrelu": nn.LeakyReLU,
+    "leakyrelu": lambda: nn.LeakyReLU(negative_slope=0.1),
     "elu": nn.ELU,
     "gelu": nn.GELU,
 }
@@ -48,7 +48,7 @@ def get_args():
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=1e-4, help="Base learning rate."
+        "--actor-lr", type=float, default=3e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--critic-lr", type=float, default=3e-4, help="Base learning rate."
@@ -69,7 +69,7 @@ def get_args():
     parser.add_argument(
         "--activation",
         type=str,
-        default="tanh",
+        default="leakyrelu",
         choices=list(_ACTIVATIONS.keys()),
         help="Activation function used in the actor and critic MLPs.",
     )
