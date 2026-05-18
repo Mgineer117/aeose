@@ -63,8 +63,8 @@ def run(args, seed, unique_id, exp_time, run_id):
 
 if __name__ == "__main__":
     torch.set_default_dtype(torch.float32)
-    # NOTE: the sampler manages its own fork-based multiprocessing context;
-    # no global start method is set here.
+    # NOTE: the sampler runs in-process vectorized env batching; no global
+    # multiprocessing start method is set here.
 
     init_args = get_args()
     unique_id = str(uuid.uuid4())[:4]

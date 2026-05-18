@@ -1,173 +1,133 @@
-"""Benchmark fork-based sampling versus vectorized batched sampling.
+"""Benchmark serial versus vectorized sampling on the downlink environment.
 
-This script simulates the Atari-style pipeline to measure overhead from:
-  1. Process spawn/join
-  2. mp.Queue serialization of numpy arrays
-  3. Per-frame serial CNN encoding in forked workers
-  4. Batched encoding in a single process
+This script compares compute time for two sampling styles on the real downlink
+env:
+    1. Serial sampling: one env, one policy forward, one env.step at a time
+    2. Vectorized sampling: multiple envs in one process, batched policy forward
 
 Run:
-  python tests/bench_sampler.py
+    python tests/bench_sampler.py
 
-The point is to compare only two paths:
-  - Forked workers: env.step() + encode each frame on CPU in child processes
-  - Vectorized: batch env.step() simulation + batched encoding on one device
-
-On CUDA, forked workers cannot safely re-initialize CUDA after fork(), so they
-are effectively CPU-only for the encoding step. The vectorized path can use the
-GPU for batched inference.
+The benchmark reports wall time, policy inference time, and env.step time so
+you can see the compute-time impact of the sampling method directly.
 """
 
 import time
-from math import ceil
-from queue import Empty
 
 import numpy as np
 import torch
-import torch.multiprocessing as mp
 import torch.nn as nn
 
+from utils.get_env import get_env
 
-class _SimpleEncoder(nn.Module):
-    def __init__(self, input_chw=(1, 210, 160), encoder_dim=256):
+
+class _SimplePolicy(nn.Module):
+    def __init__(self, obs_dim: int, action_dim: int, hidden_dim=256):
         super().__init__()
-        c, h, w = input_chw
-        self.encoder_dim = encoder_dim
+        self.obs_dim = obs_dim
+        self.action_dim = action_dim
         self.cnn = nn.Sequential(
-            nn.Conv2d(c, 16, kernel_size=8, stride=4),
+            nn.Linear(obs_dim, hidden_dim),
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=2),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, stride=1),
-            nn.ReLU(),
-            nn.Flatten(),
         )
-        with torch.no_grad():
-            dummy = torch.zeros(1, c, h, w)
-            flat_dim = self.cnn(dummy).shape[1]
-        self.fc = nn.Linear(flat_dim, encoder_dim)
+        self.fc = nn.Linear(hidden_dim, action_dim)
 
     def forward(self, x):
         return self.fc(self.cnn(x))
 
 
-ENV_STEP_MS = 0.4
+def _obs_to_tensor(obs, device="cpu"):
+    arr = np.asarray(obs, dtype=np.float32)
+    return torch.from_numpy(arr).view(1, -1).to(device)
 
 
-def _sim_env_step(frame_shape):
-    """Simulate ALE env.step(): produce a new frame plus a small delay."""
-    time.sleep(ENV_STEP_MS / 1000.0)
-    return np.random.randint(0, 256, size=frame_shape, dtype=np.uint8)
-
-
-def _encode_single(encoder, raw_frame: np.ndarray) -> np.ndarray:
-    t = torch.from_numpy(raw_frame.astype(np.float32) / 255.0)
-    t = t.unsqueeze(0).unsqueeze(0)
+def _policy_forward(policy, obs_batch, device="cpu"):
+    x = torch.from_numpy(np.asarray(obs_batch, dtype=np.float32)).view(len(obs_batch), -1)
+    x = x.to(device)
     with torch.no_grad():
-        feat = encoder(t)
-    return feat.squeeze(0).cpu().numpy()
+        logits = policy(x)
+    return torch.argmax(logits, dim=-1).cpu().numpy()
 
 
-def _encode_batch(encoder, raw_frames: np.ndarray, device="cpu") -> np.ndarray:
-    t = torch.from_numpy(raw_frames.astype(np.float32) / 255.0)
-    t = t.unsqueeze(1).to(device)
-    with torch.no_grad():
-        feat = encoder(t)
-    return feat.cpu().numpy()
+def _build_vector_envs(env_name: str, n_envs: int):
+    return [get_env(env_name) for _ in range(n_envs)]
 
 
-def _worker(pid, queue, encoder, n_steps, frame_shape):
-    encoded = np.zeros((n_steps, encoder.encoder_dim), dtype=np.float32)
-    for i in range(n_steps):
-        raw = _sim_env_step(frame_shape)
-        encoded[i] = _encode_single(encoder, raw)
-    queue.put((pid, encoded))
-
-
-def bench_fork(encoder, total_steps, num_workers, frame_shape):
-    steps_per_worker = ceil(total_steps / num_workers)
+def bench_serial(env_name, policy, total_steps, device="cpu"):
+    env = get_env(env_name)
+    obs, _ = env.reset(seed=0)
     t0 = time.time()
+    t_policy = 0.0
+    t_step = 0.0
 
-    t_spawn = time.time()
-    procs, queue = [], mp.Queue()
-    for worker_id in range(num_workers):
-        proc = mp.Process(
-            target=_worker,
-            args=(worker_id, queue, encoder, steps_per_worker, frame_shape),
-        )
-        procs.append(proc)
-        proc.start()
-    t_spawn = time.time() - t_spawn
+    steps = 0
+    while steps < total_steps:
+        _t = time.time()
+        action = _policy_forward(policy, [obs], device=device)[0]
+        t_policy += time.time() - _t
 
-    t_collect = time.time()
-    results = [None] * num_workers
-    collected = 0
-    while collected < num_workers:
-        try:
-            pid, data = queue.get(timeout=120)
-            results[pid] = data
-            collected += 1
-        except Empty:
-            break
-    t_collect = time.time() - t_collect
+        _t = time.time()
+        obs, _, terminated, truncated, _ = env.step(int(action))
+        t_step += time.time() - _t
+        steps += 1
 
-    t_join = time.time()
-    for proc in procs:
-        proc.join(timeout=10)
-        if proc.is_alive():
-            proc.terminate()
-            proc.join()
-        proc.close()
-    queue.close()
-    t_join = time.time() - t_join
+        if terminated or truncated:
+            obs, _ = env.reset(seed=steps)
 
     total = time.time() - t0
-    steps = sum(result.shape[0] for result in results if result is not None)
-    return {
-        "total": total,
-        "spawn": t_spawn,
-        "collect": t_collect,
-        "join": t_join,
-        "steps": steps,
-    }
+    env.close()
+    return {"total": total, "policy": t_policy, "step": t_step, "steps": steps}
 
 
-def bench_vectorized(encoder, total_steps, batch_size, frame_shape, device="cpu"):
-    enc = encoder.to(device)
+def bench_vectorized(env_name, policy, total_steps, num_envs, device="cpu"):
+    envs = _build_vector_envs(env_name, num_envs)
+    obs_batch = []
+    for idx, env in enumerate(envs):
+        obs, _ = env.reset(seed=idx)
+        obs_batch.append(obs)
+
     t0 = time.time()
+    t_policy = 0.0
+    t_step = 0.0
+    steps = 0
 
-    all_enc = np.zeros((total_steps, enc.encoder_dim), dtype=np.float32)
-    step = 0
-    while step < total_steps:
-        n = min(batch_size, total_steps - step)
+    while steps < total_steps:
+        _t = time.time()
+        actions = _policy_forward(policy, obs_batch, device=device)
+        t_policy += time.time() - _t
 
-        # Simulate one vectorized environment step across N envs.
-        time.sleep(ENV_STEP_MS / 1000.0)
-        raw = np.random.randint(0, 256, (n, *frame_shape), dtype=np.uint8)
-
-        all_enc[step : step + n] = _encode_batch(enc, raw, device=device)
-        step += n
+        next_obs_batch = []
+        _t = time.time()
+        for idx, env in enumerate(envs):
+            if steps >= total_steps:
+                break
+            obs, _, terminated, truncated, _ = env.step(int(actions[idx]))
+            steps += 1
+            if terminated or truncated:
+                obs, _ = env.reset(seed=steps + idx)
+            next_obs_batch.append(obs)
+        t_step += time.time() - _t
+        obs_batch = next_obs_batch if next_obs_batch else obs_batch
 
     total = time.time() - t0
-    return {"total": total, "steps": step}
+    for env in envs:
+        env.close()
+    return {"total": total, "policy": t_policy, "step": t_step, "steps": steps}
 
 
 if __name__ == "__main__":
-    mp.set_start_method("fork", force=True)
-
-    FRAME_SHAPE = (210, 160)
-    TOTAL_STEPS = 2048
-    NUM_WORKERS = 4
-    ENCODER_DIM = 256
+    ENV_NAME = "downlink"
+    TOTAL_STEPS = 128
+    NUM_ENVS = 4
 
     print("=" * 70)
-    print("BENCHMARK: forked workers vs vectorized batched sampling")
+    print("BENCHMARK: serial vs vectorized sampling on downlink")
     print("=" * 70)
-    print(f"  Frame shape:    {FRAME_SHAPE}")
+    print(f"  Env:            {ENV_NAME}")
     print(f"  Total steps:    {TOTAL_STEPS}")
-    print(f"  Num workers:    {NUM_WORKERS}")
-    print(f"  Encoder dim:    {ENCODER_DIM}")
-    print(f"  Env step sim:   {ENV_STEP_MS}ms per step")
+    print(f"  Vector envs:    {NUM_ENVS}")
 
     device = "cpu"
     if torch.cuda.is_available():
@@ -177,35 +137,38 @@ if __name__ == "__main__":
     print(f"  Device:         {device}")
     print()
 
-    encoder = _SimpleEncoder(input_chw=(1, *FRAME_SHAPE), encoder_dim=ENCODER_DIM)
-    encoder.eval()
+    probe_env = get_env(ENV_NAME)
+    obs, _ = probe_env.reset(seed=0)
+    obs_dim = int(np.asarray(obs).size)
+    action_dim = int(probe_env.action_space.n)
+    probe_env.close()
+
+    policy = _SimplePolicy(obs_dim=obs_dim, action_dim=action_dim, hidden_dim=256)
+    policy.eval()
 
     print("Warming up...")
-    _encode_single(encoder.cpu(), np.random.randint(0, 256, FRAME_SHAPE, dtype=np.uint8))
-    _encode_batch(encoder.cpu(), np.random.randint(0, 256, (4,) + FRAME_SHAPE, dtype=np.uint8))
+    _ = _policy_forward(policy, [obs], device=device)
     print()
 
     print("─" * 70)
-    print("[1] mp.Process fork: serial env.step + serial encode on CPU")
-    print("    Forked workers cannot use CUDA safely after fork().")
+    print("[1] Serial sampling")
     print("─" * 70)
-    encoder_cpu = encoder.cpu()
-    fork_result = bench_fork(encoder_cpu, TOTAL_STEPS, NUM_WORKERS, FRAME_SHAPE)
-    fork_sps = fork_result["steps"] / fork_result["total"]
-    print(f"  Total time:          {fork_result['total']:.3f}s")
-    print(f"    ├─ Process spawn:  {fork_result['spawn']:.3f}s")
-    print(f"    ├─ Queue collect:  {fork_result['collect']:.3f}s")
-    print(f"    └─ Process join:   {fork_result['join']:.3f}s")
-    print(f"  Steps collected:     {fork_result['steps']}")
-    print(f"  Steps/sec:           {fork_sps:.0f}")
+    serial_result = bench_serial(ENV_NAME, policy, TOTAL_STEPS, device=device)
+    serial_sps = serial_result["steps"] / serial_result["total"]
+    print(f"  Total time:          {serial_result['total']:.3f}s")
+    print(f"    ├─ Policy time:    {serial_result['policy']:.3f}s")
+    print(f"    └─ Env.step time:  {serial_result['step']:.3f}s")
+    print(f"  Steps/sec:           {serial_sps:.0f}")
     print()
 
     print("─" * 70)
-    print("[2] Vectorized + batched encoding")
+    print("[2] Vectorized + batched policy inference")
     print("─" * 70)
-    vector_result = bench_vectorized(encoder_cpu, TOTAL_STEPS, NUM_WORKERS, FRAME_SHAPE, device=device)
+    vector_result = bench_vectorized(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
     vector_sps = vector_result["steps"] / vector_result["total"]
     print(f"  Total time:          {vector_result['total']:.3f}s")
+    print(f"    ├─ Policy time:    {vector_result['policy']:.3f}s")
+    print(f"    └─ Env.step time:  {vector_result['step']:.3f}s")
     print(f"  Steps/sec:           {vector_sps:.0f}")
     print()
 
@@ -215,10 +178,10 @@ if __name__ == "__main__":
     print()
     print(f"  {'Method':<42} {'Steps/s':>8} {'Speedup':>8}")
     print(f"  {'─' * 42} {'─' * 8} {'─' * 8}")
-    print(f"  {'[1] Fork + serial CPU encode':<42} {fork_sps:>8.0f} {'1.0x':>8}")
-    print(f"  {'[2] Vectorized + batch encode':<42} {vector_sps:>8.0f} {vector_sps / fork_sps:>7.1f}x")
+    print(f"  {'[1] Serial sampling':<42} {serial_sps:>8.0f} {'1.0x':>8}")
+    print(f"  {'[2] Vectorized sampling':<42} {vector_sps:>8.0f} {vector_sps / serial_sps:>7.1f}x")
     print()
 
     print("Key takeaway:")
-    print("  Forked workers keep encoding on CPU after fork, while the vectorized")
-    print("  path can batch frames and use the selected device for inference.")
+    print("  Vectorized sampling should reduce policy compute time by batching")
+    print("  multiple env states in one forward pass on the selected device.")

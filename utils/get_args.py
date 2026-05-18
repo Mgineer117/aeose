@@ -115,23 +115,19 @@ def get_args():
         "--num-workers",
         type=int,
         default=3,
-        help="Max sampler worker processes. 0 = auto cap (min(cpu_count-1, 8)).",
+        help="Legacy multiprocessing knob. The sampler now uses in-process vectorized envs.",
     )
     parser.add_argument(
         "--episodes-per-worker",
         type=int,
         default=0,
-        help="Episodes each sampler worker runs per collect_samples call. "
-        "0 = auto-derive from batch_size, total workers, and episode_len.",
+        help="Deprecated compatibility option. The vectorized sampler does not use workers.",
     )
     parser.add_argument(
         "--envs-per-worker",
         type=int,
         default=4,
-        help="Number of Basilisk envs hosted inside each sampler worker. "
-        ">1 enables vectorized rollout with batched policy inference. Each "
-        "extra env adds to that worker's cold-start time, so combine with "
-        "a larger --first-round-timeout on the cluster.",
+        help="Number of envs batched together in the in-process vectorized sampler.",
     )
     parser.add_argument(
         "--async-sampling",

@@ -1,12 +1,9 @@
-import os
 import random
 import time
 from math import ceil
-from queue import Empty
 
 import numpy as np
 import torch
-import torch.multiprocessing as mp
 
 from utils.get_env import get_env
 
@@ -251,82 +248,6 @@ def _run_episodes_vec(
     return data, timings
 
 
-def _worker_loop(
-    pid,
-    task_q,
-    result_q,
-    policy,
-    env_name,
-    num_samples_per_worker,
-    episode_len,
-    state_dim,
-    action_dim,
-    envs_per_worker,
-):
-    """Persistent fork worker: creates env(s) once and processes rollout
-    requests until exit. When envs_per_worker > 1 the worker hosts a small
-    batch of envs and uses vectorized policy inference."""
-    # Workers must stay CPU-only. The CUDA context inherited via fork is not
-    # valid in the child — any CUDA call (incl. cuda.manual_seed_all) would
-    # raise cudaErrorInvalidResourceHandle.
-    torch.set_num_threads(1)
-    envs_per_worker = max(1, int(envs_per_worker))
-    envs = [get_env(env_name) for _ in range(envs_per_worker)]
-
-    while True:
-        try:
-            msg = task_q.get()
-        except (KeyboardInterrupt, EOFError):
-            break
-        if msg is None:
-            break
-
-        state_dict, seed, deterministic, iter_idx = msg
-        try:
-            policy.load_state_dict(state_dict)
-            policy.eval()
-
-            worker_seed = int(seed) + pid * 9173 + iter_idx * 31
-            np.random.seed(worker_seed)
-            random.seed(worker_seed)
-            torch.manual_seed(worker_seed)
-
-            if envs_per_worker == 1:
-                data, timings = _run_episodes(
-                    policy,
-                    envs[0],
-                    worker_seed,
-                    deterministic,
-                    num_samples_per_worker,
-                    episode_len,
-                    state_dim,
-                    action_dim,
-                )
-            else:
-                data, timings = _run_episodes_vec(
-                    policy,
-                    envs,
-                    worker_seed,
-                    deterministic,
-                    num_samples_per_worker,
-                    episode_len,
-                    state_dim,
-                    action_dim,
-                )
-            result_q.put((pid, data, timings))
-        except Exception:
-            import traceback
-
-            traceback.print_exc()
-            result_q.put((pid, None, None))
-
-    for env in envs:
-        try:
-            env.close()
-        except Exception:
-            pass
-
-
 class OnlineSampler(Base):
     def __init__(
         self,
@@ -343,15 +264,10 @@ class OnlineSampler(Base):
         verbose: bool = True,
     ) -> None:
         """
-        Persistent multiprocessing sampler with a forkserver-first start
-        method. Workers are spawned once (each builds its own Basilisk env
-        fresh) and reused across iterations — every collect_samples call
-        just broadcasts a state_dict over a queue and waits for rollouts.
+        Persistent vectorized sampler.
 
-        Worker count is capped (see __init__) because each worker is a
-        whole Basilisk+SPICE process; we'd rather have a handful of workers
-        running more episodes than dozens of workers fighting over SPICE
-        kernel files at import time.
+        The sampler keeps a small batch of envs alive in the same process and
+        batches policy inference across them. No fork, no spawn, no forkserver.
         """
         super().__init__(
             state_dim=state_dim,
@@ -361,149 +277,23 @@ class OnlineSampler(Base):
         )
 
         self.env_name = env_name
-        self.envs_per_worker = max(1, int(envs_per_worker))
-
-        # Cap workers. Each worker holds a full Basilisk + SPICE process (and
-        # now `envs_per_worker` Basilisk envs inside that process), so
-        # spawning dozens of them at once causes import storms, file-handle
-        # contention on shared SPICE kernels, and OOM.
-        cpu_cap = max(1, (os.cpu_count() or 4) - 1)
-        if num_workers and num_workers > 0:
-            max_workers = max(1, num_workers)
-        else:
-            max_workers = min(cpu_cap, 8)
-
-        # Calculate samples per worker (independent of episode boundaries).
-        # Total samples target is batch_size; distribute across workers.
-        self.total_num_worker = max(1, min(ceil(batch_size / episode_len), max_workers))
-        self.num_samples_per_worker = max(
-            episode_len, ceil(batch_size / self.total_num_worker)
-        )
+        self.envs_per_worker = max(2, int(envs_per_worker))
+        self.total_num_worker = 1
+        self.num_samples_per_worker = int(batch_size)
 
         if verbose:
             print("Sampling Parameters:")
-            print(f"Total number of workers:     {self.total_num_worker}")
-            print(f"Envs per worker:             {self.envs_per_worker}")
-            print(f"Samples per worker / call:   {self.num_samples_per_worker}")
-            print(
-                f"Approx total samples/call:   {self.total_num_worker * self.num_samples_per_worker}"
-            )
+            print(f"Vectorized envs:             {self.envs_per_worker}")
+            print(f"Samples per call:            {self.num_samples_per_worker}")
 
         torch.set_num_threads(1)  # avoid CPU oversubscription in parent
 
-        # Use forkserver instead of fork: the parent has already imported
-        # Basilisk and initialized SPICE kernels (via the eval env built in
-        # main.py), and plain fork inherits all of that into the worker.
-        # When the worker then re-initializes its own sim, SPICE handles
-        # collide with inherited state and SPKE02 trips with INVALIDRADIUS.
-        # forkserver starts from a cold child process, so each worker imports
-        # Basilisk and initializes SPICE fresh.
-        for method in ("forkserver", "spawn", "fork"):
-            try:
-                self._ctx = mp.get_context(method)
-                self._start_method = method
-                break
-            except ValueError:
-                continue
-        if verbose:
-            print(f"Sampler start method: {self._start_method}")
-
-        self._workers = []
-        self._task_queues = []
-        self._result_queue = None
-        self._started = False
+        self._envs = [get_env(self.env_name) for _ in range(self.envs_per_worker)]
         self._iter_idx = 0
-        # First call pays the Basilisk-import cost in every worker; later
-        # calls are just a state_dict broadcast + rollout. Generous timeout
-        # for round 1, tighter steady-state timeout afterwards. Both are
-        # configurable so cluster runs with cold SPICE/NFS can extend them.
-        self._first_round_timeout = int(first_round_timeout)
-        self._steady_timeout = int(steady_timeout)
-        # Async-sampling state: tracks whether a dispatch is in flight that
-        # gather() still owes a response on.
+        self._pending_batch = None
         self._pending_first_round = False
         self._pending_t_start = None
         self._has_pending = False
-
-    def _spawn_one(self, i, policy):
-        task_q = self._ctx.Queue()
-        p = self._ctx.Process(
-            target=_worker_loop,
-            args=(
-                i,
-                task_q,
-                self._result_queue,
-                policy,
-                self.env_name,
-                self.num_samples_per_worker,
-                self.episode_len,
-                self.state_dim,
-                self.action_dim,
-                self.envs_per_worker,
-            ),
-            daemon=True,
-        )
-        p.start()
-        return p, task_q
-
-    def _start_workers(self, policy):
-        if self._started:
-            return
-
-        # Snapshot policy on CPU so the pickle handed to the spawned workers
-        # carries no CUDA tensors. (`to_device` also walks any attached
-        # optimizers — without that, Adam state stays on CUDA and unpickle
-        # raises cudaErrorInvalidResourceHandle in the worker.)
-        original_device = next(
-            (p.device for p in policy.parameters()), torch.device("cpu")
-        )
-        policy.to_device(torch.device("cpu"))
-
-        # Detach the replay buffer (≈200 MB of numpy arrays) for the duration
-        # of the spawn. Workers do inference only; they don't need it, and
-        # pickling it for every worker is expensive.
-        stashed_buf = getattr(policy, "replay_buffer", None)
-        if stashed_buf is not None:
-            policy.replay_buffer = None
-
-        self._result_queue = self._ctx.Queue()
-        self._workers = [None] * self.total_num_worker
-        self._task_queues = [None] * self.total_num_worker
-        for i in range(self.total_num_worker):
-            p, task_q = self._spawn_one(i, policy)
-            self._workers[i] = p
-            self._task_queues[i] = task_q
-
-        if stashed_buf is not None:
-            policy.replay_buffer = stashed_buf
-        policy.to_device(original_device)
-        self._started = True
-
-    def _respawn_worker(self, i, policy):
-        """Replace a dead/stuck worker in slot i."""
-        old = self._workers[i]
-        if old is not None and old.is_alive():
-            old.terminate()
-            old.join(timeout=2)
-            if old.is_alive():
-                old.kill()
-                old.join()
-
-        original_device = next(
-            (p.device for p in policy.parameters()), torch.device("cpu")
-        )
-        policy.to_device(torch.device("cpu"))
-        stashed_buf = getattr(policy, "replay_buffer", None)
-        if stashed_buf is not None:
-            policy.replay_buffer = None
-
-        p, task_q = self._spawn_one(i, policy)
-        self._workers[i] = p
-        self._task_queues[i] = task_q
-
-        if stashed_buf is not None:
-            policy.replay_buffer = stashed_buf
-        policy.to_device(original_device)
 
     def dispatch(
         self,
@@ -511,92 +301,70 @@ class OnlineSampler(Base):
         seed: int | None = None,
         deterministic: bool = False,
     ):
-        """Non-blocking: snapshot policy weights, push a rollout task to
-        every worker, return immediately. Pair with `gather()` to receive
-        the batch. Used by the async sampling path so the trainer can
-        overlap policy updates with worker rollouts."""
+        """Compatibility shim for the trainer's async path.
+
+        There is no background worker anymore, so dispatch computes the next
+        vectorized batch immediately and stores it for gather().
+        """
         if self._has_pending:
             raise RuntimeError(
                 "OnlineSampler.dispatch called while a previous dispatch "
                 "is still pending. Call gather() (or drain()) first."
             )
 
-        first_round = not self._started
-        if first_round:
-            self._start_workers(policy)
-
-        sd = {
-            k: v.detach().to("cpu", copy=True)
-            for k, v in policy.state_dict().items()
-        }
-        self._iter_idx += 1
-        seed_val = 0 if seed is None else int(seed)
-
-        for q in self._task_queues:
-            q.put((sd, seed_val, deterministic, self._iter_idx))
-
-        self._pending_first_round = first_round
-        self._pending_t_start = time.time()
+        self._pending_batch = self._collect_vectorized(
+            policy, seed=seed, deterministic=deterministic
+        )
         self._has_pending = True
 
     def gather(self, policy):
-        """Blocking: wait for the workers to finish the most recently
-        dispatched rollout and return (memory, sample_time). `policy` is
-        only used to respawn dead workers on timeout."""
+        """Return the most recent dispatch result."""
         if not self._has_pending:
             raise RuntimeError(
                 "OnlineSampler.gather called with no pending dispatch."
             )
 
-        t_start = self._pending_t_start
-        first_round = self._pending_first_round
-        timeout = self._first_round_timeout if first_round else self._steady_timeout
-
-        worker_memories = [None] * self.total_num_worker
-        worker_timings = [None] * self.total_num_worker
-        collected = 0
-        while collected < self.total_num_worker:
-            try:
-                pid, data, timings = self._result_queue.get(timeout=timeout)
-                worker_memories[pid] = data
-                worker_timings[pid] = timings
-                collected += 1
-            except Empty:
-                missing = [
-                    i
-                    for i in range(self.total_num_worker)
-                    if worker_memories[i] is None
-                ]
-                print(
-                    f"[Warning] Sampler queue timeout after "
-                    f"{timeout}s ({collected}/{self.total_num_worker}). "
-                    f"Respawning workers {missing} — likely SPICE/Basilisk "
-                    f"hang in those processes."
-                )
-                for i in missing:
-                    self._respawn_worker(i, policy)
-                break
-
-        t_concat_start = time.time()
-        memory = {}
-        for wm in worker_memories:
-            if wm is None:
-                continue
-            for key, val in wm.items():
-                memory[key] = (
-                    np.concatenate((memory[key], val), axis=0)
-                    if key in memory
-                    else val
-                )
-        t_concat = time.time() - t_concat_start
-
-        wall = time.time() - t_start
-        self._print_timing_breakdown(worker_timings, wall, t_concat)
-
+        memory, wall = self._pending_batch
+        self._pending_batch = None
         self._has_pending = False
-        self._pending_first_round = False
         self._pending_t_start = None
         return memory, wall
+
+    def _collect_vectorized(
+        self,
+        policy,
+        seed: int | None = None,
+        deterministic: bool = False,
+    ):
+        seed_val = 0 if seed is None else int(seed)
+        self._iter_idx += 1
+        worker_seed = seed_val + self._iter_idx * 31
+
+        original_device = next(
+            (p.device for p in policy.parameters()), torch.device("cpu")
+        )
+
+        try:
+            policy.eval()
+            np.random.seed(worker_seed)
+            random.seed(worker_seed)
+            torch.manual_seed(worker_seed)
+
+            memory, timings = _run_episodes_vec(
+                policy,
+                self._envs,
+                worker_seed,
+                deterministic,
+                self.num_samples_per_worker,
+                self.episode_len,
+                self.state_dim,
+                self.action_dim,
+            )
+            wall = timings["worker_wall"]
+            self._print_timing_breakdown([timings], wall, 0.0)
+            return memory, wall
+        finally:
+            policy.to_device(original_device)
 
     @staticmethod
     def _print_timing_breakdown(worker_timings, wall, t_concat):
@@ -643,16 +411,12 @@ class OnlineSampler(Base):
         )
 
     def drain(self, policy):
-        """Consume and discard any in-flight dispatched batch. Used at the
-        end of training to avoid leaking a queue full of results."""
+        """Consume and discard any in-flight dispatched batch."""
         if not self._has_pending:
             return
-        try:
-            self.gather(policy)
-        except Exception:
-            self._has_pending = False
-            self._pending_first_round = False
-            self._pending_t_start = None
+        self._pending_batch = None
+        self._has_pending = False
+        self._pending_t_start = None
 
     def collect_samples(
         self,
@@ -661,67 +425,21 @@ class OnlineSampler(Base):
         deterministic: bool = False,
         use_mp: bool = True,
     ):
-        """Synchronous one-shot collect: dispatch + gather. Preserved as the
-        default API so the rest of the codebase is unchanged."""
-        if use_mp:
-            self.dispatch(policy, seed=seed, deterministic=deterministic)
-            return self.gather(policy)
-        else:
-            t_start = time.time()
-            memory = {}
-            # Sequential fallback: build a single env in-process and roll out.
-            self._iter_idx += 1
-            seed_val = 0 if seed is None else int(seed)
-            original_device = next(
-                (p.device for p in policy.parameters()), torch.device("cpu")
-            )
-            policy.to_device(torch.device("cpu"))
-            env = get_env(self.env_name)
-            try:
-                for i in range(self.total_num_worker):
-                    worker_seed = seed_val + i * 9173 + self._iter_idx * 31
-                    np.random.seed(worker_seed)
-                    random.seed(worker_seed)
-                    torch.manual_seed(worker_seed)
-                    wm, _ = _run_episodes(
-                        policy,
-                        env,
-                        worker_seed,
-                        deterministic,
-                        self.num_samples_per_worker,
-                        self.episode_len,
-                        self.state_dim,
-                        self.action_dim,
-                    )
-                    for key, val in wm.items():
-                        memory[key] = (
-                            np.concatenate((memory[key], val), axis=0)
-                            if key in memory
-                            else val
-                        )
-            finally:
-                env.close()
-                policy.to_device(original_device)
-
-        return memory, time.time() - t_start
+        """Synchronous one-shot collect using the in-process vectorized path."""
+        _ = use_mp
+        return self._collect_vectorized(policy, seed=seed, deterministic=deterministic)
 
     def close(self):
-        if not self._started:
-            return
-        for q in self._task_queues:
-            try:
-                q.put(None)
-            except Exception:
-                pass
-        for p in self._workers:
-            p.join(timeout=5)
-            if p.is_alive():
-                p.terminate()
-                p.join()
-        self._workers = []
-        self._task_queues = []
-        self._result_queue = None
-        self._started = False
+        if hasattr(self, "_envs"):
+            for env in self._envs:
+                try:
+                    env.close()
+                except Exception:
+                    pass
+            self._envs = []
+        self._pending_batch = None
+        self._has_pending = False
+        self._pending_t_start = None
 
     def __del__(self):
         try:

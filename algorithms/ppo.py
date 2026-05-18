@@ -22,6 +22,11 @@ class PPO_Algorithm(nn.Module):
         # === Define policy === #
         self.define_policy()
 
+        # PPO should use the vectorized rollout path by default.
+        # The sampler switches from serial env stepping to batched stepping
+        # when envs_per_worker > 1.
+        envs_per_worker = max(2, int(getattr(self.args, "envs_per_worker", 4)))
+
         # === Sampler === #
         sampler = OnlineSampler(
             env_name=self.args.env_name,
@@ -29,11 +34,7 @@ class PPO_Algorithm(nn.Module):
             action_dim=self.args.action_dim,
             episode_len=self.env.max_steps,
             batch_size=int(self.args.minibatch_size * self.args.num_minibatch),
-            num_workers=getattr(self.args, "num_workers", 0),
-            episodes_per_worker=getattr(self.args, "episodes_per_worker", 0),
-            envs_per_worker=getattr(self.args, "envs_per_worker", 1),
-            first_round_timeout=getattr(self.args, "first_round_timeout", 3600),
-            steady_timeout=getattr(self.args, "steady_timeout", 1200),
+            envs_per_worker=envs_per_worker,
         )
 
         trainer = Trainer(
