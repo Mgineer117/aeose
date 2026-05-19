@@ -48,7 +48,7 @@ def get_args():
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=3e-4, help="Base learning rate."
+        "--actor-lr", type=float, default=1e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--critic-lr", type=float, default=3e-4, help="Base learning rate."
@@ -69,7 +69,7 @@ def get_args():
     parser.add_argument(
         "--activation",
         type=str,
-        default="leakyrelu",
+        default="tanh",
         choices=list(_ACTIVATIONS.keys()),
         help="Activation function used in the actor and critic MLPs.",
     )
@@ -132,7 +132,7 @@ def get_args():
     parser.add_argument(
         "--sampler-mode",
         type=str,
-        default="vectorized",
+        default="forkserver",
         choices=["vectorized", "forkserver"],
         help="Sampler backend: in-process vectorized env stepping or forkserver workers.",
     )
