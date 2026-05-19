@@ -8,6 +8,7 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 from bsk_rl.data.base import Data, DataStore, GlobalReward
 from bsk_rl.data.no_data import NoDataStore
+from envs import duration, n_ahead, n_targets, target_distribution
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
@@ -425,12 +426,7 @@ class EclipseGroundStationWorld(
         return merged
 
 
-duration = 5700.0 * 5  # 5 orbits
 max_step_duration = 300.0
-
-target_distribution = "uniform"
-n_targets = 135
-n_ahead = 3
 
 if target_distribution == "uniform":
     targets = scene.UniformTargets(n_targets)
@@ -442,7 +438,7 @@ else:
 n_intervals = int(np.ceil(duration / max_step_duration))
 
 
-def get_downlink_env():
+def get_downlink_env(n_ahead=n_ahead):
     env = SatelliteTasking(
         satellite=power_sat_generator(n_ahead=n_ahead, include_time=False)(
             name="EO1-power",
@@ -456,10 +452,10 @@ def get_downlink_env():
         sim_rate=0.5,
         max_step_duration=max_step_duration,
         time_limit=duration,
-        failure_penalty=-1.0,
+        failure_penalty=-10.0,
         # Keeping previous time-limit behavior:
         # the episode time limit is treated separately from real failures.
-        terminate_on_time_limit=False,
+        terminate_on_time_limit=True,
         log_level="ERROR",
         world_type=EclipseGroundStationWorld,
         world_args=EclipseGroundStationWorld.default_world_args(),

@@ -5,6 +5,7 @@ from Basilisk.utilities import orbitalMotion
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
 from bsk_rl.sim import fsw
 from bsk_rl.utils.orbital import random_orbit, rv2HN
+from envs import duration, n_ahead, n_targets, target_distribution
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
@@ -124,11 +125,6 @@ SAT_ARGS_POWER.update(
 )
 
 
-duration = 5700.0 * 5  # 5 orbits
-target_distribution = "uniform"
-n_targets = 135
-n_ahead = 3
-
 if target_distribution == "uniform":
     targets = scene.UniformTargets(n_targets)
 elif target_distribution == "cities":
@@ -137,7 +133,7 @@ elif target_distribution == "cities":
 
 def get_charge_env():
     env = SatelliteTasking(
-        satellite=power_sat_generator(n_ahead=32, include_time=False)(
+        satellite=power_sat_generator(n_ahead=n_ahead, include_time=False)(
             name="EO1-power",
             sat_args=SAT_ARGS_POWER,
         ),
@@ -150,7 +146,7 @@ def get_charge_env():
         # Time-limit should be a truncation (artificial cutoff), not a
         # termination — otherwise the value bootstrap is zeroed out and
         # PPO/DDPG cannot learn that the episode could have continued.
-        terminate_on_time_limit=False,
+        terminate_on_time_limit=True,
         log_level="ERROR",
     )
 

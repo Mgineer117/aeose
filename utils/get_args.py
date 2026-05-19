@@ -172,6 +172,17 @@ def get_args():
         help="Path to a directory for storing the log.",
     )
 
+    parser.add_argument(
+        "--planning-horizon",
+        type=int,
+        default=None,
+        help=(
+            "Optional cap on decision-interval steps per episode. "
+            "If set, overrides the env-derived decision-step count (useful to "
+            "force a 6-interval episode regardless of env time_limit)."
+        ),
+    )
+
     args = parser.parse_args()
     args.device = select_device(args.gpu_idx, verbose=True)
     args.str_actor_fc_dim = str(tuple(args.actor_fc_dim))

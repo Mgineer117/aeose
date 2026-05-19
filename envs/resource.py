@@ -5,6 +5,7 @@ from Basilisk.utilities import orbitalMotion
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
 from bsk_rl.sim import fsw
 from bsk_rl.utils.orbital import random_orbit, rv2HN
+from envs import duration, n_ahead, n_targets, target_distribution
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
@@ -124,23 +125,18 @@ SAT_ARGS_POWER.update(
 )
 
 
-duration = 5700.0 * 5  # 5 orbits
-target_distribution = "uniform"
-n_targets = 135
-n_ahead = 3
-
 if target_distribution == "uniform":
     targets = scene.UniformTargets(n_targets)
 elif target_distribution == "cities":
     targets = scene.CityTargets(n_targets)
 
 
-def get_resource_env():
+def get_resource_env(n_ahead=n_ahead):
     resource_fn = lambda sat: sat.dynamics.battery_charge_fraction  # or equivalent
     reward_weight = 1e-1
 
     env = SatelliteTasking(
-        satellite=power_sat_generator(n_ahead=32, include_time=False)(
+        satellite=power_sat_generator(n_ahead=n_ahead, include_time=False)(
             name="EO1-power",
             sat_args=SAT_ARGS_POWER,
         ),
@@ -154,7 +150,7 @@ def get_resource_env():
         time_limit=duration,
         failure_penalty=0.0,
         # Time-limit -> truncation so V(s') still bootstraps.
-        terminate_on_time_limit=False,
+        terminate_on_time_limit=True,
         log_level="ERROR",
     )
 
