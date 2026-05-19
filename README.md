@@ -13,29 +13,12 @@ conda create -n aeos python==3.11.*
 conda activate aeos
 ```
 
-### 1. Install Basilisk (`bsk`)
+### 1. Install dependencies
+
+From the project root, install Basilisk, `bsk_rl`, and the Python requirements in one command:
 
 ```bash
-pip install bsk
-```
-
-### 2. Install `bsk_rl`
-
-Clone the repository and install it in editable mode:
-
-```bash
-git clone https://github.com/AVSLab/bsk_rl.git
-cd bsk_rl
-python3 -m pip install -e "."
-cd ..
-```
-
-### 3. Install Python dependencies
-
-From the project root:
-
-```bash
-pip install -r requirements.txt
+pip install bsk bsk-rl -r requirements.txt
 ```
 
 ## Running
