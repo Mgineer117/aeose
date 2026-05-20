@@ -89,10 +89,12 @@ class PPO_Learner(Base):
         self.train()
         t0 = time.time()
 
-        # Update observation normalizer with raw batch data (if enabled)
+        # Update observation normalizer with raw batch data (NaN-safe)
         try:
             if getattr(self, "obs_rms", None) is not None:
-                self.obs_rms.update(batch["states"])
+                states_raw = np.asarray(batch["states"], dtype=np.float32)
+                states_raw = np.nan_to_num(states_raw, nan=0.0, posinf=0.0, neginf=0.0)
+                self.obs_rms.update(states_raw)
         except Exception:
             pass
 
@@ -108,12 +110,13 @@ class PPO_Learner(Base):
             )
 
         # Ingredients: Convert batch data to tensors
-        states = self.preprocess_state(batch["states"])
-        actions = self.preprocess_state(batch["actions"])
-        rewards = self.preprocess_state(batch["rewards"])
-        terminations = self.preprocess_state(batch["terminations"])
-        truncations = self.preprocess_state(batch["truncations"])
-        old_logprobs = self.preprocess_state(batch["logprobs"])
+        # Only normalize observations; use base preprocess for other fields
+        states = self.preprocess_state(batch["states"])  # normalized
+        actions = super().preprocess_state(batch["actions"])  # NOT normalized
+        rewards = super().preprocess_state(batch["rewards"])  # NOT normalized
+        terminations = super().preprocess_state(batch["terminations"])  # NOT normalized
+        truncations = super().preprocess_state(batch["truncations"])  # NOT normalized
+        old_logprobs = super().preprocess_state(batch["logprobs"])  # NOT normalized
 
         # Compute advantages and returns. We pass terminations and truncations
         # separately so the value bootstrap survives time-limit cutoffs while
@@ -136,7 +139,6 @@ class PPO_Learner(Base):
         losses = []
         actor_losses = []
         value_losses = []
-        l2_losses = []
         entropy_losses = []
 
         clip_fractions = []
@@ -155,11 +157,10 @@ class PPO_Learner(Base):
                     mb_advantages.std() + 1e-8
                 )
 
-                # 1. Critic Loss (with optional regularization)
-                value_loss, l2_loss = self.critic_loss(mb_states, mb_returns)
+                # 1. Critic Loss
+                value_loss = self.critic_loss(mb_states, mb_returns)
                 # Track value loss for logging
                 value_losses.append(value_loss.item())
-                l2_losses.append(l2_loss.item())
 
                 # 2. actor Loss
                 actor_loss, entropy_loss, clip_fraction, kl_div = self.actor_loss(
@@ -176,7 +177,7 @@ class PPO_Learner(Base):
                     break
 
                 # Total loss
-                loss = actor_loss - entropy_loss + 0.5 * value_loss + l2_loss
+                loss = actor_loss - entropy_loss + 0.5 * value_loss
                 losses.append(loss.item())
 
                 # Update critic parameters
@@ -200,7 +201,6 @@ class PPO_Learner(Base):
             f"{self.name}/loss/loss": np.mean(losses),
             f"{self.name}/loss/actor_loss": np.mean(actor_losses),
             f"{self.name}/loss/value_loss": np.mean(value_losses),
-            f"{self.name}/loss/l2_loss": np.mean(l2_losses),
             f"{self.name}/loss/entropy_loss": np.mean(entropy_losses),
             f"{self.name}/analytics/clip_fraction": np.mean(clip_fractions),
             f"{self.name}/analytics/klDivergence": target_kl[-1],
@@ -227,7 +227,7 @@ class PPO_Learner(Base):
         return loss_dict, timesteps, update_time
 
     def preprocess_state(self, state: torch.Tensor | np.ndarray) -> torch.Tensor:
-        """Normalize observations using running mean/std then fallback to Base preprocess."""
+        """Normalize observations using running mean/std."""
         state = super().preprocess_state(state)
         try:
             if getattr(self, "obs_rms", None) is not None and self.obs_rms.count > 0:
@@ -271,8 +271,4 @@ class PPO_Learner(Base):
     def critic_loss(self, mb_states: torch.Tensor, mb_returns: torch.Tensor):
         mb_values = self.critic(mb_states)
         value_loss = self.mse_loss(mb_values, mb_returns)
-        l2_loss = (
-            sum(param.pow(2).sum() for param in self.critic.parameters()) * self.l2_reg
-        )
-
-        return value_loss, l2_loss
+        return value_loss

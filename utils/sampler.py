@@ -348,6 +348,200 @@ def _forkserver_env_worker(conn, env_name, episode_len):
             pass
 
 
+def _spawn_env_worker(conn, env_name, episode_len):
+    """Spawn worker process for environment sampling (same as forkserver but using spawn context)."""
+    env = None
+    t_step = 0.0
+    t_reset = 0.0
+    t_wait = 0.0
+    n_resets = 0
+    n_steps = 0
+    ep_step = 0
+
+    try:
+        env = get_env(env_name)
+        conn.send(("ready", None))
+        while True:
+            t_recv = time.time()
+            try:
+                msg = conn.recv()
+            except EOFError:
+                break
+            t_wait += time.time() - t_recv
+
+            if not msg:
+                continue
+
+            cmd = msg[0]
+            if cmd == "reset":
+                seed = int(msg[1])
+                _t = time.time()
+                obs, _ = env.reset(seed=seed)
+                t_reset += time.time() - _t
+                n_resets += 1
+                ep_step = 0
+                conn.send(("obs", obs))
+            elif cmd == "step":
+                action = int(msg[1])
+                _t = time.time()
+                try:
+                    next_obs, rew, term, trunc, _ = env.step(action)
+                except Exception as exc:
+                    print(
+                        f"[sampler/spawn] env.step raised: {exc!r}. "
+                        "Ending episode as truncated."
+                    )
+                    next_obs = None
+                    rew = 0.0
+                    term = False
+                    trunc = True
+                t_step += time.time() - _t
+                n_steps += 1
+
+                ep_step += 1
+                if ep_step >= episode_len and not (term or trunc):
+                    trunc = True
+
+                done = bool(term) or bool(trunc)
+                if done:
+                    _t = time.time()
+                    reset_obs, _ = env.reset()
+                    t_reset += time.time() - _t
+                    n_resets += 1
+                    ep_step = 0
+                else:
+                    reset_obs = next_obs
+
+                conn.send(("transition", next_obs, rew, bool(term), bool(trunc), reset_obs))
+            elif cmd == "stats":
+                conn.send(
+                    {
+                        "policy": 0.0,
+                        "step": t_step,
+                        "reset": t_reset,
+                        "buffer": 0.0,
+                        "worker_wall": t_step + t_reset + t_wait,
+                        "n_envs": 1,
+                        "n_steps": n_steps,
+                        "n_resets": n_resets,
+                    }
+                )
+                t_step = 0.0
+                t_reset = 0.0
+                t_wait = 0.0
+                n_resets = 0
+                n_steps = 0
+            elif cmd == "close":
+                break
+    finally:
+        if env is not None:
+            try:
+                env.close()
+            except Exception:
+                pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _async_vectorized_worker(conn, env_name, episode_len):
+    """Async vectorized worker process (identical to forkserver/spawn, used in AsyncVectorEnv collection)."""
+    env = None
+    t_step = 0.0
+    t_reset = 0.0
+    t_wait = 0.0
+    n_resets = 0
+    n_steps = 0
+    ep_step = 0
+
+    try:
+        env = get_env(env_name)
+        conn.send(("ready", None))
+        while True:
+            t_recv = time.time()
+            try:
+                msg = conn.recv()
+            except EOFError:
+                break
+            t_wait += time.time() - t_recv
+
+            if not msg:
+                continue
+
+            cmd = msg[0]
+            if cmd == "reset":
+                seed = int(msg[1])
+                _t = time.time()
+                obs, _ = env.reset(seed=seed)
+                t_reset += time.time() - _t
+                n_resets += 1
+                ep_step = 0
+                conn.send(("obs", obs))
+            elif cmd == "step":
+                action = int(msg[1])
+                _t = time.time()
+                try:
+                    next_obs, rew, term, trunc, _ = env.step(action)
+                except Exception as exc:
+                    print(
+                        f"[sampler/async_vec] env.step raised: {exc!r}. "
+                        "Ending episode as truncated."
+                    )
+                    next_obs = None
+                    rew = 0.0
+                    term = False
+                    trunc = True
+                t_step += time.time() - _t
+                n_steps += 1
+
+                ep_step += 1
+                if ep_step >= episode_len and not (term or trunc):
+                    trunc = True
+
+                done = bool(term) or bool(trunc)
+                if done:
+                    _t = time.time()
+                    reset_obs, _ = env.reset()
+                    t_reset += time.time() - _t
+                    n_resets += 1
+                    ep_step = 0
+                else:
+                    reset_obs = next_obs
+
+                conn.send(("transition", next_obs, rew, bool(term), bool(trunc), reset_obs))
+            elif cmd == "stats":
+                conn.send(
+                    {
+                        "policy": 0.0,
+                        "step": t_step,
+                        "reset": t_reset,
+                        "buffer": 0.0,
+                        "worker_wall": t_step + t_reset + t_wait,
+                        "n_envs": 1,
+                        "n_steps": n_steps,
+                        "n_resets": n_resets,
+                    }
+                )
+                t_step = 0.0
+                t_reset = 0.0
+                t_wait = 0.0
+                n_resets = 0
+                n_steps = 0
+            elif cmd == "close":
+                break
+    finally:
+        if env is not None:
+            try:
+                env.close()
+            except Exception:
+                pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 class OnlineSampler(Base):
     def __init__(
         self,
@@ -380,10 +574,10 @@ class OnlineSampler(Base):
 
         self.env_name = env_name
         self.sampler_mode = str(sampler_mode).lower()
-        if self.sampler_mode not in {"vectorized", "forkserver"}:
+        if self.sampler_mode not in {"vectorized", "async_vectorized", "forkserver", "spawn"}:
             raise ValueError(
                 f"Unknown sampler_mode={sampler_mode!r}. "
-                "Expected one of {'vectorized', 'forkserver'}."
+                "Expected one of {'vectorized', 'async_vectorized', 'forkserver', 'spawn'}."
             )
 
         self.envs_per_worker = max(2, int(envs_per_worker))
@@ -395,7 +589,7 @@ class OnlineSampler(Base):
             print("Sampling Parameters:")
             print(f"Sampler mode:                {self.sampler_mode}")
             print(f"Vectorized envs:             {self.envs_per_worker}")
-            print(f"Forkserver workers:          {self.num_workers}")
+            print(f"Workers:                     {self.num_workers}")
             print(f"Samples per call:            {self.num_samples_per_worker}")
 
         torch.set_num_threads(1)  # avoid CPU oversubscription in parent
@@ -405,10 +599,22 @@ class OnlineSampler(Base):
         self._fs_conns = []
         self._fs_workers = []
         self._fs_states = None
+        self._spawn_ctx = None
+        self._spawn_conns = []
+        self._spawn_workers = []
+        self._spawn_states = None
+        self._async_ctx = None
+        self._async_conns = []
+        self._async_workers = []
+        self._async_states = None
         if self.sampler_mode == "vectorized":
             self._envs = [get_env(self.env_name) for _ in range(self.envs_per_worker)]
-        else:
+        elif self.sampler_mode == "async_vectorized":
+            self._init_async_vectorized_workers()
+        elif self.sampler_mode == "forkserver":
             self._init_forkserver_workers()
+        elif self.sampler_mode == "spawn":
+            self._init_spawn_workers()
 
         self._iter_idx = 0
         self._pending_batch = None
@@ -438,6 +644,54 @@ class OnlineSampler(Base):
                 raise RuntimeError(f"Forkserver worker failed to start: {msg!r}")
 
         self._fs_states = np.zeros((self.num_workers,) + self.state_dim, dtype=np.float32)
+
+    def _init_spawn_workers(self):
+        """Initialize spawn-based worker processes (similar to forkserver but using spawn context)."""
+        self._spawn_ctx = mp.get_context("spawn")
+        self._spawn_conns = []
+        self._spawn_workers = []
+        for _ in range(self.num_workers):
+            parent_conn, child_conn = self._spawn_ctx.Pipe()
+            proc = self._spawn_ctx.Process(
+                target=_spawn_env_worker,
+                args=(child_conn, self.env_name, self.episode_len),
+            )
+            proc.daemon = True
+            proc.start()
+            child_conn.close()
+            self._spawn_conns.append(parent_conn)
+            self._spawn_workers.append(proc)
+
+        for conn in self._spawn_conns:
+            msg = conn.recv()
+            if not (isinstance(msg, tuple) and msg[0] == "ready"):
+                raise RuntimeError(f"Spawn worker failed to start: {msg!r}")
+
+        self._spawn_states = np.zeros((self.num_workers,) + self.state_dim, dtype=np.float32)
+
+    def _init_async_vectorized_workers(self):
+        """Initialize async vectorized worker processes (true parallelization like SB3 AsyncVectorEnv)."""
+        self._async_ctx = mp.get_context("forkserver")
+        self._async_conns = []
+        self._async_workers = []
+        for _ in range(self.num_workers):
+            parent_conn, child_conn = self._async_ctx.Pipe()
+            proc = self._async_ctx.Process(
+                target=_async_vectorized_worker,
+                args=(child_conn, self.env_name, self.episode_len),
+            )
+            proc.daemon = True
+            proc.start()
+            child_conn.close()
+            self._async_conns.append(parent_conn)
+            self._async_workers.append(proc)
+
+        for conn in self._async_conns:
+            msg = conn.recv()
+            if not (isinstance(msg, tuple) and msg[0] == "ready"):
+                raise RuntimeError(f"Async vectorized worker failed to start: {msg!r}")
+
+        self._async_states = np.zeros((self.num_workers,) + self.state_dim, dtype=np.float32)
 
     def dispatch(
         self,
@@ -617,6 +871,109 @@ class OnlineSampler(Base):
         finally:
             policy.to_device(original_device)
 
+    def _collect_spawn(
+        self,
+        policy,
+        seed: int | None = None,
+        deterministic: bool = False,
+    ):
+        """Collect samples using spawn-based worker processes (functionally identical to forkserver)."""
+        seed_val = 0 if seed is None else int(seed)
+        self._iter_idx += 1
+        worker_seed = seed_val + self._iter_idx * 31
+
+        original_device = next(
+            (p.device for p in policy.parameters()), torch.device("cpu")
+        )
+
+        try:
+            policy.eval()
+            np.random.seed(worker_seed)
+            random.seed(worker_seed)
+            torch.manual_seed(worker_seed)
+
+            for i, conn in enumerate(self._spawn_conns):
+                conn.send(("reset", worker_seed + i * 1009))
+            for i, conn in enumerate(self._spawn_conns):
+                msg = conn.recv()
+                if not (isinstance(msg, tuple) and msg[0] == "obs"):
+                    raise RuntimeError(f"Unexpected reset response from worker {i}: {msg!r}")
+                self._spawn_states[i] = msg[1]
+
+            data = _build_buffer(
+                self.num_samples_per_worker,
+                self.state_dim,
+                self.action_dim,
+            )
+            t_policy = 0.0
+            t_buffer = 0.0
+            t_worker_wait = 0.0
+            current_time = 0
+
+            while current_time < self.num_samples_per_worker:
+                _t = time.time()
+                with torch.no_grad():
+                    a_tensor, meta = policy(self._spawn_states, deterministic=deterministic)
+                    a_np = a_tensor.cpu().numpy()
+                    lp_np = meta["logprobs"].cpu().detach().numpy()
+                    ent_np = meta["entropy"].cpu().detach().numpy()
+                t_policy += time.time() - _t
+
+                for i, conn in enumerate(self._spawn_conns):
+                    conn.send(("step", int(np.argmax(a_np[i]))))
+
+                _t = time.time()
+                for i, conn in enumerate(self._spawn_conns):
+                    msg = conn.recv()
+                    if not (isinstance(msg, tuple) and msg[0] == "transition"):
+                        raise RuntimeError(
+                            f"Unexpected step response from worker {i}: {msg!r}"
+                        )
+
+                    step_next_state, rew, term, trunc, next_policy_state = msg[1:]
+
+                    if current_time < self.num_samples_per_worker:
+                        _tb = time.time()
+                        idx = current_time
+                        done = bool(term) or bool(trunc)
+                        data["states"][idx] = self._spawn_states[i]
+                        data["next_states"][idx] = step_next_state
+                        data["actions"][idx] = a_np[i]
+                        data["rewards"][idx] = rew
+                        data["terminations"][idx] = float(bool(term))
+                        data["truncations"][idx] = float(bool(trunc))
+                        data["terminals"][idx] = float(done)
+                        data["dones"][idx] = float(done)
+                        data["logprobs"][idx] = lp_np[i]
+                        data["entropys"][idx] = ent_np[i]
+                        t_buffer += time.time() - _tb
+                        current_time += 1
+
+                    self._spawn_states[i] = next_policy_state
+                t_worker_wait += time.time() - _t
+
+            for k in data:
+                data[k] = data[k][: self.num_samples_per_worker]
+
+            worker_timings = []
+            for conn in self._spawn_conns:
+                conn.send(("stats",))
+            for conn in self._spawn_conns:
+                msg = conn.recv()
+                if isinstance(msg, dict):
+                    worker_timings.append(msg)
+
+            wall = t_policy + t_worker_wait + t_buffer
+            if worker_timings:
+                for wt in worker_timings:
+                    wt["policy"] = t_policy / max(1, len(worker_timings))
+                    wt["buffer"] = t_buffer / max(1, len(worker_timings))
+                self._print_timing_breakdown(worker_timings, wall, 0.0)
+
+            return data, wall
+        finally:
+            policy.to_device(original_device)
+
     @staticmethod
     def _print_timing_breakdown(worker_timings, wall, t_concat):
         """Print where the most recent sampling call spent its wall-clock.
@@ -669,6 +1026,117 @@ class OnlineSampler(Base):
         self._has_pending = False
         self._pending_t_start = None
 
+    def _collect_async_vectorized(
+        self,
+        policy,
+        seed: int | None = None,
+        deterministic: bool = False,
+    ):
+        """Collect samples using async vectorized workers (true parallelization like SB3 AsyncVectorEnv).
+        
+        Key difference from forkserver/spawn: sends ALL actions at once (non-blocking),
+        then collects ALL results in parallel, enabling true environment step parallelization.
+        """
+        seed_val = 0 if seed is None else int(seed)
+        self._iter_idx += 1
+        worker_seed = seed_val + self._iter_idx * 31
+
+        original_device = next(
+            (p.device for p in policy.parameters()), torch.device("cpu")
+        )
+
+        try:
+            policy.eval()
+            np.random.seed(worker_seed)
+            random.seed(worker_seed)
+            torch.manual_seed(worker_seed)
+
+            # Initial reset: send all resets in one go
+            for i, conn in enumerate(self._async_conns):
+                conn.send(("reset", worker_seed + i * 1009))
+            for i, conn in enumerate(self._async_conns):
+                msg = conn.recv()
+                if not (isinstance(msg, tuple) and msg[0] == "obs"):
+                    raise RuntimeError(f"Unexpected reset response from worker {i}: {msg!r}")
+                self._async_states[i] = msg[1]
+
+            data = _build_buffer(
+                self.num_samples_per_worker,
+                self.state_dim,
+                self.action_dim,
+            )
+            t_policy = 0.0
+            t_buffer = 0.0
+            t_worker_wait = 0.0
+            current_time = 0
+
+            while current_time < self.num_samples_per_worker:
+                # Batched policy forward pass
+                _t = time.time()
+                with torch.no_grad():
+                    a_tensor, meta = policy(self._async_states, deterministic=deterministic)
+                    a_np = a_tensor.cpu().numpy()
+                    lp_np = meta["logprobs"].cpu().detach().numpy()
+                    ent_np = meta["entropy"].cpu().detach().numpy()
+                t_policy += time.time() - _t
+
+                # Send ALL actions to workers in one go (non-blocking)
+                for i, conn in enumerate(self._async_conns):
+                    conn.send(("step", int(np.argmax(a_np[i]))))
+
+                # Collect ALL results in parallel (workers can run simultaneously)
+                _t = time.time()
+                for i, conn in enumerate(self._async_conns):
+                    msg = conn.recv()
+                    if not (isinstance(msg, tuple) and msg[0] == "transition"):
+                        raise RuntimeError(
+                            f"Unexpected step response from worker {i}: {msg!r}"
+                        )
+
+                    step_next_state, rew, term, trunc, next_policy_state = msg[1:]
+
+                    if current_time < self.num_samples_per_worker:
+                        _tb = time.time()
+                        idx = current_time
+                        done = bool(term) or bool(trunc)
+                        data["states"][idx] = self._async_states[i]
+                        data["next_states"][idx] = step_next_state
+                        data["actions"][idx] = a_np[i]
+                        data["rewards"][idx] = rew
+                        data["terminations"][idx] = float(bool(term))
+                        data["truncations"][idx] = float(bool(trunc))
+                        data["terminals"][idx] = float(done)
+                        data["dones"][idx] = float(done)
+                        data["logprobs"][idx] = lp_np[i]
+                        data["entropys"][idx] = ent_np[i]
+                        t_buffer += time.time() - _tb
+                        current_time += 1
+
+                    self._async_states[i] = next_policy_state
+                t_worker_wait += time.time() - _t
+
+            for k in data:
+                data[k] = data[k][: self.num_samples_per_worker]
+
+            worker_timings = []
+            for conn in self._async_conns:
+                conn.send(("stats",))
+            for conn in self._async_conns:
+                msg = conn.recv()
+                if isinstance(msg, dict):
+                    worker_timings.append(msg)
+
+            wall = t_policy + t_worker_wait + t_buffer
+            if worker_timings:
+                for wt in worker_timings:
+                    wt["policy"] = t_policy / max(1, len(worker_timings))
+                    wt["buffer"] = t_buffer / max(1, len(worker_timings))
+                self._print_timing_breakdown(worker_timings, wall, 0.0)
+
+            return data, wall
+        finally:
+            policy.to_device(original_device)
+
     def collect_samples(
         self,
         policy,
@@ -680,6 +1148,10 @@ class OnlineSampler(Base):
         _ = use_mp
         if self.sampler_mode == "forkserver":
             return self._collect_forkserver(policy, seed=seed, deterministic=deterministic)
+        elif self.sampler_mode == "spawn":
+            return self._collect_spawn(policy, seed=seed, deterministic=deterministic)
+        elif self.sampler_mode == "async_vectorized":
+            return self._collect_async_vectorized(policy, seed=seed, deterministic=deterministic)
         return self._collect_vectorized(policy, seed=seed, deterministic=deterministic)
 
     def _close_forkserver_workers(self):
@@ -702,9 +1174,55 @@ class OnlineSampler(Base):
         self._fs_workers = []
         self._fs_states = None
 
+    def _close_spawn_workers(self):
+        """Close spawn worker processes (similar to forkserver cleanup)."""
+        for conn in self._spawn_conns:
+            try:
+                conn.send(("close",))
+            except Exception:
+                pass
+        for conn in self._spawn_conns:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        for worker in self._spawn_workers:
+            try:
+                worker.join(timeout=1.0)
+            except Exception:
+                pass
+        self._spawn_conns = []
+        self._spawn_workers = []
+        self._spawn_states = None
+
+    def _close_async_vectorized_workers(self):
+        """Close async vectorized worker processes."""
+        for conn in self._async_conns:
+            try:
+                conn.send(("close",))
+            except Exception:
+                pass
+        for conn in self._async_conns:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        for worker in self._async_workers:
+            try:
+                worker.join(timeout=1.0)
+            except Exception:
+                pass
+        self._async_conns = []
+        self._async_workers = []
+        self._async_states = None
+
     def close(self):
         if self.sampler_mode == "forkserver":
             self._close_forkserver_workers()
+        elif self.sampler_mode == "spawn":
+            self._close_spawn_workers()
+        elif self.sampler_mode == "async_vectorized":
+            self._close_async_vectorized_workers()
         if hasattr(self, "_envs"):
             for env in self._envs:
                 try:

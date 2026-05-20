@@ -209,6 +209,166 @@ def _forkserver_worker(conn, env_name, seed_offset=0):
     conn.close()
 
 
+def _spawn_worker(conn, env_name, seed_offset=0):
+    """Spawn worker process for benchmarking (identical to forkserver but using spawn context)."""
+    try:
+        env = get_env(env_name)
+    except Exception as exc:
+        conn.send({'error': str(exc)})
+        conn.close()
+        return
+
+    t_step = 0.0
+    t_reset = 0.0
+    n_resets = 0
+
+    # initial reset
+    _t = time.time()
+    try:
+        obs, _ = env.reset(seed=seed_offset)
+    except Exception:
+        obs = None
+    t_reset += time.time() - _t
+    n_resets += 1
+    conn.send(('obs', obs))
+
+    while True:
+        try:
+            msg = conn.recv()
+        except EOFError:
+            break
+        if not msg:
+            continue
+        cmd = msg[0]
+        if cmd == 'act':
+            action = msg[1]
+            _t = time.time()
+            try:
+                obs, _, term, trunc, _ = env.step(int(action))
+            except Exception:
+                obs = None
+                term = False
+                trunc = True
+            t_step += time.time() - _t
+            if term or trunc:
+                _rt = time.time()
+                try:
+                    obs, _ = env.reset(seed=seed_offset + n_resets)
+                except Exception:
+                    obs = None
+                t_reset += time.time() - _rt
+                n_resets += 1
+            conn.send(('obs', obs, bool(term), bool(trunc)))
+        elif cmd == 'close':
+            break
+
+    try:
+        env.close()
+    except Exception:
+        pass
+
+    # send back timings
+    try:
+        conn.send({'step': t_step, 'reset': t_reset, 'n_resets': n_resets})
+    except Exception:
+        pass
+    conn.close()
+
+
+def bench_spawn(env_name, policy, total_steps, num_envs, device="cpu"):
+    """Benchmark using spawn multiprocessing (more portable across platforms than forkserver)."""
+    ctx = mp.get_context('spawn')
+    conns = []
+    procs = []
+    for i in range(num_envs):
+        parent_conn, child_conn = ctx.Pipe()
+        p = ctx.Process(target=_spawn_worker, args=(child_conn, env_name, i))
+        p.daemon = True
+        p.start()
+        child_conn.close()
+        conns.append(parent_conn)
+        procs.append(p)
+
+    # receive initial observations
+    obs_batch = []
+    for conn in conns:
+        msg = conn.recv()
+        if isinstance(msg, dict) and msg.get('error'):
+            raise RuntimeError(f"Worker error: {msg['error']}")
+        if msg[0] == 'obs':
+            obs_batch.append(msg[1])
+
+    t0 = time.time()
+    t_policy = 0.0
+    t_roundtrip = 0.0
+    steps = 0
+
+    while steps < total_steps:
+        _t = time.time()
+        actions = _policy_forward(policy, obs_batch, device=device)
+        t_policy += time.time() - _t
+
+        # send actions and collect responses
+        _t = time.time()
+        for idx, conn in enumerate(conns):
+            if steps >= total_steps:
+                break
+            conn.send(('act', int(actions[idx])))
+        # gather
+        next_obs = []
+        for conn in conns:
+            if steps >= total_steps:
+                # drain any remaining replies
+                try:
+                    _ = conn.recv()
+                except Exception:
+                    pass
+                continue
+            try:
+                msg = conn.recv()
+            except Exception:
+                msg = ('obs', None)
+            if msg[0] == 'obs':
+                # could be ( 'obs', obs ) or ('obs', obs, term, trunc)
+                if len(msg) >= 4:
+                    obs, term, trunc = msg[1], msg[2], msg[3]
+                else:
+                    obs = msg[1]
+                    term = False
+                    trunc = False
+                next_obs.append(obs)
+                steps += 1
+        t_roundtrip += time.time() - _t
+        obs_batch = next_obs if next_obs else obs_batch
+
+    total = time.time() - t0
+
+    # close workers and collect timings
+    worker_timings = []
+    for conn, p in zip(conns, procs):
+        try:
+            conn.send(('close',))
+        except Exception:
+            pass
+    for conn, p in zip(conns, procs):
+        try:
+            t = conn.recv()
+            if isinstance(t, dict):
+                worker_timings.append(t)
+        except Exception:
+            pass
+    for p in procs:
+        try:
+            p.join(timeout=1.0)
+        except Exception:
+            pass
+
+    t_step = sum(w.get('step', 0.0) for w in worker_timings)
+    t_reset = sum(w.get('reset', 0.0) for w in worker_timings)
+
+    return {"total": total, "policy": t_policy, "roundtrip": t_roundtrip, "step": t_step, "reset": t_reset, "steps": steps}
+
+
 def bench_forkserver(env_name, policy, total_steps, num_envs, device="cpu"):
     ctx = mp.get_context('forkserver')
     conns = []
@@ -302,7 +462,100 @@ def bench_forkserver(env_name, policy, total_steps, num_envs, device="cpu"):
     return {"total": total, "policy": t_policy, "roundtrip": t_roundtrip, "step": t_step, "reset": t_reset, "steps": steps}
 
 
-if __name__ == "__main__":
+def bench_async_vectorized(env_name, policy, total_steps, num_envs, device="cpu"):
+    """Benchmark using async vectorization (true parallelization with send-all then recv-all)."""
+    ctx = mp.get_context('forkserver')
+    conns = []
+    procs = []
+    for i in range(num_envs):
+        parent_conn, child_conn = ctx.Pipe()
+        p = ctx.Process(target=_spawn_worker, args=(child_conn, env_name, i))  # Use same worker protocol
+        p.daemon = True
+        p.start()
+        child_conn.close()
+        conns.append(parent_conn)
+        procs.append(p)
+
+    # receive initial observations
+    obs_batch = []
+    for conn in conns:
+        msg = conn.recv()
+        if isinstance(msg, dict) and msg.get('error'):
+            raise RuntimeError(f"Worker error: {msg['error']}")
+        if msg[0] == 'obs':
+            obs_batch.append(msg[1])
+
+    t0 = time.time()
+    t_policy = 0.0
+    t_roundtrip = 0.0
+    steps = 0
+
+    while steps < total_steps:
+        _t = time.time()
+        actions = _policy_forward(policy, obs_batch, device=device)
+        t_policy += time.time() - _t
+
+        # KEY DIFFERENCE: send ALL actions to workers simultaneously (non-blocking)
+        _t = time.time()
+        for idx, conn in enumerate(conns):
+            if steps >= total_steps:
+                break
+            conn.send(('act', int(actions[idx])))
+        
+        # Then collect ALL results in parallel (workers can run while we collect)
+        next_obs = []
+        for conn in conns:
+            if steps >= total_steps:
+                try:
+                    _ = conn.recv()
+                except Exception:
+                    pass
+                continue
+            try:
+                msg = conn.recv()
+            except Exception:
+                msg = ('obs', None)
+            if msg[0] == 'obs':
+                if len(msg) >= 4:
+                    obs, term, trunc = msg[1], msg[2], msg[3]
+                else:
+                    obs = msg[1]
+                    term = False
+                    trunc = False
+                next_obs.append(obs)
+                steps += 1
+        t_roundtrip += time.time() - _t
+        obs_batch = next_obs if next_obs else obs_batch
+
+    total = time.time() - t0
+
+    # close workers and collect timings
+    worker_timings = []
+    for conn, p in zip(conns, procs):
+        try:
+            conn.send(('close',))
+        except Exception:
+            pass
+    for conn, p in zip(conns, procs):
+        try:
+            t = conn.recv()
+            if isinstance(t, dict):
+                worker_timings.append(t)
+        except Exception:
+            pass
+    for p in procs:
+        try:
+            p.join(timeout=1.0)
+        except Exception:
+            pass
+
+    t_step = sum(w.get('step', 0.0) for w in worker_timings)
+    t_reset = sum(w.get('reset', 0.0) for w in worker_timings)
+
+    return {"total": total, "policy": t_policy, "roundtrip": t_roundtrip, "step": t_step, "reset": t_reset, "steps": steps}
+
+
+def main():
     ENV_NAME = "downlink"
     TOTAL_STEPS = 128
     NUM_ENVS = 4
@@ -344,7 +597,7 @@ if __name__ == "__main__":
     print("[1] Serial sampling — running multiple trials")
     print("─" * 70)
     serial_runs = []
-    for i in range(NUM_TRIALS):
+    for _ in range(NUM_TRIALS):
         r = bench_serial(ENV_NAME, policy, TOTAL_STEPS, device=device)
         serial_runs.append(r)
 
@@ -367,7 +620,7 @@ if __name__ == "__main__":
     print("[2] Vectorized + batched policy inference — running multiple trials")
     print("─" * 70)
     vector_runs = []
-    for i in range(NUM_TRIALS):
+    for _ in range(NUM_TRIALS):
         r = bench_vectorized(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
         vector_runs.append(r)
 
@@ -387,10 +640,35 @@ if __name__ == "__main__":
     print()
 
     print("─" * 70)
-    print("[3] Forkserver worker baseline — parent policy, worker env.step")
+    print("[3] Spawn worker baseline — parent policy, worker env.step")
+    print("─" * 70)
+    spawn_runs = []
+    for _ in range(NUM_TRIALS):
+        r = bench_spawn(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
+        spawn_runs.append(r)
+
+    spawn_totals = np.array([r['total'] for r in spawn_runs])
+    spawn_policies = np.array([r['policy'] for r in spawn_runs])
+    spawn_roundtrips = np.array([r.get('roundtrip', 0.0) for r in spawn_runs])
+    spawn_steps_time = np.array([r['step'] for r in spawn_runs])
+    spawn_resets = np.array([r.get('reset', 0.0) for r in spawn_runs])
+    spawn_steps = np.array([r['steps'] for r in spawn_runs])
+
+    spawn_sps = spawn_steps.sum() / spawn_totals.sum()
+    print(f"  Trials:              {NUM_TRIALS}")
+    print(f"  Total time (mean±std):      {spawn_totals.mean():.3f}s ± {spawn_totals.std():.3f}s")
+    print(f"    ├─ Policy time (mean):     {spawn_policies.mean():.3f}s")
+    print(f"    ├─ Roundtrip (send/recv)    {spawn_roundtrips.mean():.3f}s")
+    print(f"    ├─ Env.step time (sum mean):{spawn_steps_time.mean():.3f}s")
+    print(f"    └─ Reset time (mean):      {spawn_resets.mean():.3f}s")
+    print(f"  Steps total:          {spawn_steps.sum()}  Steps/sec overall: {spawn_sps:.1f}")
+    print()
+
+    print("─" * 70)
+    print("[4] Forkserver worker baseline — parent policy, worker env.step")
     print("─" * 70)
     fork_runs = []
-    for i in range(NUM_TRIALS):
+    for _ in range(NUM_TRIALS):
         r = bench_forkserver(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
         fork_runs.append(r)
 
@@ -411,6 +689,31 @@ if __name__ == "__main__":
     print(f"  Steps total:          {fork_steps.sum()}  Steps/sec overall: {fork_sps:.1f}")
     print()
 
+    print("─" * 70)
+    print("[5] Async Vectorized worker — true parallelization (send-all then recv-all)")
+    print("─" * 70)
+    async_runs = []
+    for _ in range(NUM_TRIALS):
+        r = bench_async_vectorized(ENV_NAME, policy, TOTAL_STEPS, NUM_ENVS, device=device)
+        async_runs.append(r)
+
+    async_totals = np.array([r['total'] for r in async_runs])
+    async_policies = np.array([r['policy'] for r in async_runs])
+    async_roundtrips = np.array([r.get('roundtrip', 0.0) for r in async_runs])
+    async_steps_time = np.array([r['step'] for r in async_runs])
+    async_resets = np.array([r.get('reset', 0.0) for r in async_runs])
+    async_steps = np.array([r['steps'] for r in async_runs])
+
+    async_sps = async_steps.sum() / async_totals.sum()
+    print(f"  Trials:              {NUM_TRIALS}")
+    print(f"  Total time (mean±std):      {async_totals.mean():.3f}s ± {async_totals.std():.3f}s")
+    print(f"    ├─ Policy time (mean):     {async_policies.mean():.3f}s")
+    print(f"    ├─ Roundtrip (send/recv)    {async_roundtrips.mean():.3f}s")
+    print(f"    ├─ Env.step time (sum mean):{async_steps_time.mean():.3f}s")
+    print(f"    └─ Reset time (mean):      {async_resets.mean():.3f}s")
+    print(f"  Steps total:          {async_steps.sum()}  Steps/sec overall: {async_sps:.1f}")
+    print()
+
     print("=" * 70)
     print("SUMMARY")
     print("=" * 70)
@@ -419,9 +722,15 @@ if __name__ == "__main__":
     print(f"  {'─' * 42} {'─' * 8} {'─' * 8}")
     print(f"  {'[1] Serial sampling':<42} {serial_sps:>8.1f} {'1.0x':>8}")
     print(f"  {'[2] Vectorized sampling':<42} {vector_sps:>8.1f} {vector_sps / serial_sps:>7.2f}x")
-    print(f"  {'[3] Forkserver sampling':<42} {fork_sps:>8.1f} {fork_sps / serial_sps:>7.2f}x")
+    print(f"  {'[3] Spawn worker sampling':<42} {spawn_sps:>8.1f} {spawn_sps / serial_sps:>7.2f}x")
+    print(f"  {'[4] Forkserver worker sampling':<42} {fork_sps:>8.1f} {fork_sps / serial_sps:>7.2f}x")
+    print(f"  {'[5] Async vectorized (true parallel)':<42} {async_sps:>8.1f} {async_sps / serial_sps:>7.2f}x")
     print()
 
     print("Key takeaway:")
     print("  Vectorized sampling should reduce policy compute time by batching")
     print("  multiple env states in one forward pass on the selected device.")
+
+
+if __name__ == "__main__":
+    main()

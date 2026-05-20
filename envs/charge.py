@@ -143,9 +143,6 @@ def get_charge_env():
         max_step_duration=300.0,
         time_limit=duration,
         failure_penalty=0.0,
-        # Time-limit should be a truncation (artificial cutoff), not a
-        # termination — otherwise the value bootstrap is zeroed out and
-        # PPO/DDPG cannot learn that the episode could have continued.
         terminate_on_time_limit=True,
         log_level="ERROR",
     )

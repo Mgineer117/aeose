@@ -40,6 +40,10 @@ def run(args, seed, unique_id, exp_time, run_id):
         algo = PD_Algorithm(
             env=env, logger=logger, writer=writer, args=args, run_id=run_id
         )
+    elif args.algo_name == "mcts":
+        from algorithms.mcts import MCTS_Algorithm
+
+        algo = MCTS_Algorithm(env=env, logger=logger, writer=writer, args=args)
     else:
         raise NotImplementedError(f"{args.algo_name} is not implemented.")
 

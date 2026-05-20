@@ -184,9 +184,6 @@ def get_desat_env(n_ahead=n_ahead):
         max_step_duration=300.0,
         time_limit=duration,
         failure_penalty=-10.0,
-        # Time-limit is an artificial cutoff -> truncation, so V(s') still
-        # bootstraps. Real terminations come from TerminationGuard (battery /
-        # wheel speed / data buffer full).
         terminate_on_time_limit=True,
         log_level="ERROR",
     )

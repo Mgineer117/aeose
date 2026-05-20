@@ -149,7 +149,6 @@ def get_resource_env(n_ahead=n_ahead):
         max_step_duration=300.0,
         time_limit=duration,
         failure_penalty=0.0,
-        # Time-limit -> truncation so V(s') still bootstraps.
         terminate_on_time_limit=True,
         log_level="ERROR",
     )

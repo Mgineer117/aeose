@@ -104,7 +104,7 @@ def get_args():
         help="Lower bound of the eigenvalue of the dual metric.",
     )
     parser.add_argument(
-        "--entropy-scaler", type=float, default=1e-2, help="Base learning rate."
+        "--entropy-scaler", type=float, default=1e-3, help="Base learning rate."
     )
     parser.add_argument("--gamma", type=float, default=0.99, help="Base learning rate.")
     parser.add_argument(
@@ -133,8 +133,8 @@ def get_args():
         "--sampler-mode",
         type=str,
         default="forkserver",
-        choices=["vectorized", "forkserver"],
-        help="Sampler backend: in-process vectorized env stepping or forkserver workers.",
+        choices=["vectorized", "async_vectorized", "forkserver", "spawn"],
+        help="Sampler backend: in-process serial vectorized, async vectorized workers, forkserver workers, or spawn workers.",
     )
     parser.add_argument(
         "--async-sampling",
@@ -181,6 +181,30 @@ def get_args():
             "If set, overrides the env-derived decision-step count (useful to "
             "force a 6-interval episode regardless of env time_limit)."
         ),
+    )
+
+    # ---- MCTS-specific arguments ----
+    parser.add_argument(
+        "--mcts-mode",
+        type=str,
+        default="offline",
+        choices=["online", "offline"],
+        help=(
+            "MCTS training mode: 'online' = tree search + learned critic online; "
+            "'offline' = pure tree search data generation → supervised network training"
+        ),
+    )
+    parser.add_argument(
+        "--num-simulations",
+        type=int,
+        default=100,
+        help="Number of Monte Carlo Tree Search simulations per decision.",
+    )
+    parser.add_argument(
+        "--c-puct",
+        type=float,
+        default=1.0,
+        help="Exploration constant (UCB coefficient) for MCTS tree selection.",
     )
 
     args = parser.parse_args()
