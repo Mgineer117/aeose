@@ -4,8 +4,8 @@ from Basilisk.utilities import orbitalMotion
 
 from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
 from bsk_rl.sim import fsw
-from bsk_rl.utils.orbital import random_orbit, rv2HN
-from envs import duration, n_ahead, n_targets, target_distribution
+from bsk_rl.utils.orbital import random_orbit
+from envs import build_targets, decision_interval, duration, n_ahead, orbit_alt_km
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
@@ -39,50 +39,25 @@ class Density(obs.Observation):
         densities = [sum(rewards[time_bins == i]) for i in range(self.intervals)]
         return np.array(densities) / self.norm
 
-
-def wheel_speed_3(sat):
-    return np.array(sat.dynamics.wheel_speeds[0:3]) / 630
-
-
-def s_hat_H(sat):
-    r_SN_N = (
-        sat.simulator.world.gravFactory.spiceObject.planetStateOutMsgs[
-            sat.simulator.world.sun_index
-        ]
-        .read()
-        .PositionVector
-    )
-    r_BN_N = sat.dynamics.r_BN_N
-    r_SB_N = np.array(r_SN_N) - np.array(r_BN_N)
-    r_SB_H = rv2HN(r_BN_N, sat.dynamics.v_BN_N) @ r_SB_N
-    return r_SB_H / np.linalg.norm(r_SB_H)
-
-
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
         action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),
-                dict(prop="c_hat_H"),
                 dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
                 dict(prop="v_BN_P", norm=7616.5),
                 dict(prop="battery_charge_fraction"),
-                dict(prop="wheel_speed_3", fn=wheel_speed_3),
-                dict(prop="s_hat_H", fn=s_hat_H),
+                dict(prop="wheel_speeds_fraction"),
+                dict(prop="storage_level_fraction"),
             ),
             obs.OpportunityProperties(
                 dict(prop="priority"),
                 dict(prop="r_LB_H", norm=800 * 1e3),
-                dict(prop="target_angle", norm=np.pi / 2),
-                dict(prop="target_angle_rate", norm=0.03),
-                dict(prop="opportunity_open", norm=300.0),
-                dict(prop="opportunity_close", norm=300.0),
                 type="target",
                 n_ahead_observe=n_ahead,
             ),
             obs.Eclipse(norm=5700),
-            Density(intervals=20, norm=5),
         ]
 
         if include_time:
@@ -106,7 +81,7 @@ SAT_ARGS = dict(
     omega_max=np.radians(5),
     servo_Ki=5.0,
     servo_P=150 / 5,
-    oe=lambda: random_orbit(alt=800),
+    oe=lambda: random_orbit(alt=orbit_alt_km),
 )
 
 SAT_ARGS_POWER = {}
@@ -124,11 +99,7 @@ SAT_ARGS_POWER.update(
     )
 )
 
-
-if target_distribution == "uniform":
-    targets = scene.UniformTargets(n_targets)
-elif target_distribution == "cities":
-    targets = scene.CityTargets(n_targets)
+targets = build_targets(scene)
 
 
 def get_resource_env(n_ahead=n_ahead):
@@ -146,7 +117,7 @@ def get_resource_env(n_ahead=n_ahead):
             data.ResourceReward(reward_weight=reward_weight, resource_fn=resource_fn),
         ],
         sim_rate=0.5,
-        max_step_duration=300.0,
+        max_step_duration=decision_interval,
         time_limit=duration,
         failure_penalty=0.0,
         terminate_on_time_limit=True,

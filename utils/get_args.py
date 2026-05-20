@@ -88,9 +88,9 @@ def get_args():
         "--eval-num", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
-    parser.add_argument("--minibatch-size", type=int, default=256, help="")
-    parser.add_argument("--batch-size", type=int, default=256, help="")
-    parser.add_argument("--K-epochs", type=int, default=6, help="")
+    parser.add_argument("--minibatch-size", type=int, default=1024, help="")
+    parser.add_argument("--batch-size", type=int, default=1024, help="")
+    parser.add_argument("--K-epochs", type=int, default=30, help="")
     parser.add_argument(
         "--target-kl",
         type=float,
@@ -125,7 +125,6 @@ def get_args():
     )
     parser.add_argument(
         "--envs-per-worker",
-        type=int,
         default=4,
         help="Number of envs batched together in the in-process vectorized sampler.",
     )
@@ -159,6 +158,55 @@ def get_args():
         help="Seconds to wait for each subsequent sampler batch.",
     )
     parser.add_argument(
+        "--ppo-buffer-strategy",
+        type=str,
+        default="diverse_recent",
+        choices=["fifo", "diverse_recent"],
+        help="Replay-buffer retention policy used when PPO snapshots are saved.",
+    )
+    parser.add_argument(
+        "--ppo-buffer-recent-fraction",
+        type=float,
+        default=0.35,
+        help="Fraction of the PPO replay buffer reserved for the newest policy rollouts.",
+    )
+    parser.add_argument(
+        "--ppo-buffer-diversity-weight",
+        type=float,
+        default=1.0,
+        help="Weight assigned to novelty when PPO retains saved buffer samples.",
+    )
+    parser.add_argument(
+        "--ppo-buffer-recency-weight",
+        type=float,
+        default=0.35,
+        help="Weight assigned to recency when PPO retains saved buffer samples.",
+    )
+    parser.add_argument(
+        "--ppo-buffer-random-swap-prob",
+        type=float,
+        default=0.02,
+        help="Small probability of random replacement to avoid a stale diverse PPO archive.",
+    )
+    parser.add_argument(
+        "--ppo-buffer-candidate-pool-size",
+        type=int,
+        default=256,
+        help="Number of random stored transitions compared during PPO buffer replacement.",
+    )
+    parser.add_argument(
+        "--ppo-buffer-recency-horizon",
+        type=int,
+        default=4096,
+        help="Decay horizon, in insertions, for PPO replay-buffer recency bias.",
+    )
+    parser.add_argument(
+        "--ppo-buffer-projection-dim",
+        type=int,
+        default=32,
+        help="Random-projection dimension used to estimate PPO buffer diversity.",
+    )
+    parser.add_argument(
         "--gpu-idx", type=int, default=0, help="Number of training epochs."
     )
     parser.add_argument(
@@ -181,6 +229,55 @@ def get_args():
             "If set, overrides the env-derived decision-step count (useful to "
             "force a 6-interval episode regardless of env time_limit)."
         ),
+    )
+    parser.add_argument(
+        "--pd-buffer-mode",
+        type=str,
+        default="teacher",
+        choices=["teacher", "student", "mixed"],
+        help="Policy-distillation data source: teacher buffer only, student rollouts only, or a hybrid of both.",
+    )
+    parser.add_argument(
+        "--pd-buffer-capacity",
+        type=int,
+        default=50000,
+        help="Max number of teacher-side states retained for policy distillation.",
+    )
+    parser.add_argument(
+        "--pd-student-buffer-capacity",
+        type=int,
+        default=50000,
+        help="Max number of student-collected states retained for policy distillation.",
+    )
+    parser.add_argument(
+        "--pd-batch-size",
+        type=int,
+        default=1024,
+        help="Mini-batch size used by policy distillation.",
+    )
+    parser.add_argument(
+        "--pd-student-rollout-steps",
+        type=int,
+        default=256,
+        help="How many states to collect from the current student policy before each PD update.",
+    )
+    parser.add_argument(
+        "--pd-student-rollout-deterministic",
+        action="store_true",
+        help="Collect student distillation states using greedy student actions instead of sampled actions.",
+    )
+    parser.add_argument(
+        "--pd-mixed-student-ratio",
+        type=float,
+        default=0.5,
+        help="In mixed PD mode, fraction of each batch drawn from student-side states.",
+    )
+    parser.add_argument(
+        "--pd-mixed-update",
+        type=str,
+        default="dagger",
+        choices=["random", "dagger"],
+        help="How mixed PD mode merges new student states into the aggregate buffer.",
     )
 
     # ---- MCTS-specific arguments ----

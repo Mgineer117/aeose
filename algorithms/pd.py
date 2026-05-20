@@ -34,6 +34,8 @@ class PD_Algorithm(nn.Module):
             eval_num=self.args.eval_num,
             rendering=self.args.rendering,
             seed=self.args.seed,
+            student_rollout_steps=self.args.pd_student_rollout_steps,
+            student_rollout_deterministic=self.args.pd_student_rollout_deterministic,
         )
 
         trainer.train()
@@ -92,9 +94,16 @@ class PD_Algorithm(nn.Module):
         self.policy = PD_Learner(
             actor=actor,
             target_actor=target_actor,
-            data=states,
+            teacher_states=states,
             actor_lr=self.args.actor_lr,
             target_kl=0.003,
             gamma=self.args.gamma,
+            buffer_mode=self.args.pd_buffer_mode,
+            teacher_buffer_capacity=self.args.pd_buffer_capacity,
+            student_buffer_capacity=self.args.pd_student_buffer_capacity,
+            minibatch_size=self.args.pd_batch_size,
+            mixed_student_ratio=self.args.pd_mixed_student_ratio,
+            mixed_update=self.args.pd_mixed_update,
+            seed=self.args.seed,
             device=self.args.device,
         )

@@ -27,6 +27,8 @@ class PDTrainer:
         eval_num: int = 10,
         rendering: bool = False,
         seed: int = 0,
+        student_rollout_steps: int = 0,
+        student_rollout_deterministic: bool = False,
     ) -> None:
         self.env = env
         self.policy = policy
@@ -48,6 +50,8 @@ class PDTrainer:
 
         self.rendering = rendering
         self.seed = seed
+        self.student_rollout_steps = max(0, int(student_rollout_steps))
+        self.student_rollout_deterministic = student_rollout_deterministic
 
     def train(self) -> dict[str, float]:
         start_time = time.time()
@@ -69,7 +73,18 @@ class PDTrainer:
                 step = pbar.n + 1  # + 1 to avoid zero division
                 self.policy.train()
 
+                student_added = 0
+                if self.student_rollout_steps > 0 and hasattr(
+                    self.policy, "ingest_student_states"
+                ):
+                    states = self.collect_student_states(
+                        max_steps=self.student_rollout_steps,
+                        deterministic=self.student_rollout_deterministic,
+                    )
+                    student_added = self.policy.ingest_student_states(states)
+
                 loss_dict, update_time, policy_infos = self.policy.learn()
+                loss_dict[f"{self.policy.name}/buffer/student_added"] = student_added
 
                 pbar.update(1)
 
@@ -98,6 +113,31 @@ class PDTrainer:
         self.logger.print(
             f"Total {self.policy.name} training time: {(time.time() - start_time) / 3600} hours"
         )
+
+    def collect_student_states(self, max_steps: int, deterministic: bool = False):
+        if max_steps <= 0:
+            return None
+
+        states = []
+        state, _ = self.env.reset(seed=self.seed)
+        episode_seed = self.seed
+
+        while len(states) < max_steps:
+            states.append(np.asarray(state, dtype=np.float32).copy())
+            with torch.no_grad():
+                action, _ = self.policy(state, deterministic=deterministic)
+                action_np = (
+                    action.cpu().numpy().squeeze(0) if action.shape[-1] > 1 else [action.item()]
+                )
+
+            next_state, _, term, trunc, _ = self.env.step(np.argmax(action_np))
+            state = next_state
+
+            if term or trunc:
+                episode_seed += 1
+                state, _ = self.env.reset(seed=episode_seed)
+
+        return np.asarray(states, dtype=np.float32)
 
     def _run_eval(self, step, save=False, eval_idx=None, force_save=False):
         """Single evaluation pass shared by baseline / periodic / final hooks."""

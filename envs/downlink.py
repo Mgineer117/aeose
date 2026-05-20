@@ -8,7 +8,7 @@ from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 from bsk_rl.data.base import Data, DataStore, GlobalReward
 from bsk_rl.data.no_data import NoDataStore
-from envs import duration, n_ahead, n_targets, target_distribution
+from envs import build_targets, decision_interval, duration, n_ahead, orbit_alt_km
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
@@ -78,32 +78,19 @@ def power_sat_generator(n_ahead=32, include_time=False):
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),
-                dict(prop="c_hat_H"),
                 dict(prop="r_BN_P", norm=orbitalMotion.REQ_EARTH * 1e3),
                 dict(prop="v_BN_P", norm=7616.5),
                 dict(prop="battery_charge_fraction"),
                 dict(prop="wheel_speeds_fraction"),
-                dict(prop="s_hat_H", fn=s_hat_H),
                 dict(prop="storage_level_fraction"),
             ),
             obs.OpportunityProperties(
                 dict(prop="priority"),
                 dict(prop="r_LB_H", norm=800 * 1e3),
-                dict(prop="target_angle", norm=np.pi / 2),
-                dict(prop="target_angle_rate", norm=0.03),
-                dict(prop="opportunity_open", norm=300.0),
-                dict(prop="opportunity_close", norm=300.0),
                 type="target",
                 n_ahead_observe=n_ahead,
             ),
-            obs.OpportunityProperties(
-                dict(prop="opportunity_open", norm=300.0),
-                dict(prop="opportunity_close", norm=300.0),
-                type="ground_station",
-                n_ahead_observe=n_ahead,
-            ),
             obs.Eclipse(norm=5700),
-            Density(intervals=20, norm=5),
         ]
 
         if include_time:
@@ -128,7 +115,7 @@ SAT_ARGS = dict(
     omega_max=np.radians(5),
     servo_Ki=5.0,
     servo_P=150 / 5,
-    oe=lambda: random_orbit(alt=800),
+    oe=lambda: random_orbit(alt=orbit_alt_km),
 )
 
 
@@ -426,14 +413,9 @@ class EclipseGroundStationWorld(
         return merged
 
 
-max_step_duration = 300.0
+max_step_duration = decision_interval
 
-if target_distribution == "uniform":
-    targets = scene.UniformTargets(n_targets)
-elif target_distribution == "cities":
-    targets = scene.CityTargets(n_targets)
-else:
-    raise ValueError(f"Unknown target_distribution: {target_distribution}")
+targets = build_targets(scene)
 
 n_intervals = int(np.ceil(duration / max_step_duration))
 

@@ -80,6 +80,15 @@ class PPO_Algorithm(nn.Module):
             buffer_size=200_000,
             batch_size=self.args.batch_size,
             device=self.args.device,
+            retention_strategy=self.args.ppo_buffer_strategy,
+            recent_fraction=self.args.ppo_buffer_recent_fraction,
+            diversity_weight=self.args.ppo_buffer_diversity_weight,
+            recency_weight=self.args.ppo_buffer_recency_weight,
+            random_swap_prob=self.args.ppo_buffer_random_swap_prob,
+            candidate_pool_size=self.args.ppo_buffer_candidate_pool_size,
+            recency_horizon=self.args.ppo_buffer_recency_horizon,
+            projection_dim=self.args.ppo_buffer_projection_dim,
+            seed=self.args.seed,
         )
 
         actor = PPO_Actor(
