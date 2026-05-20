@@ -17,26 +17,10 @@ def run(args, seed, unique_id, exp_time, run_id):
 
     # get env
     env = get_env(args.env_name)
-    # bsk_rl envs end internally via `time_limit / max_step_duration` (≈95
-    # decision steps for the 5-orbit scenarios). We give the sampler some
-    # headroom above that as a safety-net so it never cuts the episode
-    # before the env itself does — but no longer the 1000 we had, which
-    # was 10× the real cap and just wasted preallocated buffer memory.
-    env_time_limit = getattr(env, "time_limit", None)
-    env_step_dur = getattr(env, "max_step_duration", None)
-    if env_time_limit is not None and env_step_dur:
-        # Compute decision-interval count from env time settings. Keep a
-        # small safety headroom (+10) by default to avoid prematurely
-        # truncating env rollouts if the sampler preallocates buffers.
-        env.max_steps = int(env_time_limit / env_step_dur) + 10
-        # Allow user override to force an exact planning horizon (e.g. 6).
-        if getattr(args, "planning_horizon", None) is not None:
-            env.max_steps = min(env.max_steps, int(args.planning_horizon))
-    else:
-        env.max_steps = 1000
+
     args.state_dim = env.observation_space.shape
     args.action_dim = env.action_space.n
-    args.episode_len = env.max_steps
+    args.episode_len = getattr(env, "max_steps", None)
     args.is_discrete = env.action_space.__class__.__name__ == "Discrete"
 
     logger, writer = setup_logger(args, unique_id, exp_time, seed)

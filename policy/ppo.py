@@ -8,7 +8,7 @@ from policy.base import Base
 from policy.layers.ppo_networks import PPO_Actor, PPO_Critic
 
 # from utils.torch import get_flat_grad_from, get_flat_params_from, set_flat_params_to
-from utils.rl import estimate_advantages
+from utils.rl import estimate_advantages, RunningMeanStd
 from utils.replay_buffer import ReplayBuffer
 
 # from models.layers.ppo_networks import PPO_Policy, PPO_Critic
@@ -42,6 +42,12 @@ class PPO_Learner(Base):
 
         self.state_dim = actor.state_dim
         self.action_dim = actor.action_dim
+
+        # running statistics for observation normalization
+        try:
+            self.obs_rms = RunningMeanStd(self.state_dim)
+        except Exception:
+            self.obs_rms = None
 
         self.num_minibatch = num_minibatch
         self.minibatch_size = minibatch_size
@@ -82,6 +88,13 @@ class PPO_Learner(Base):
         """Performs a single training step using PPO, incorporating all reference training steps."""
         self.train()
         t0 = time.time()
+
+        # Update observation normalizer with raw batch data (if enabled)
+        try:
+            if getattr(self, "obs_rms", None) is not None:
+                self.obs_rms.update(batch["states"])
+        except Exception:
+            pass
 
         # Store batch data in replay buffer
         for i in range(batch["states"].shape[0]):
@@ -212,6 +225,18 @@ class PPO_Learner(Base):
         self.eval()
 
         return loss_dict, timesteps, update_time
+
+    def preprocess_state(self, state: torch.Tensor | np.ndarray) -> torch.Tensor:
+        """Normalize observations using running mean/std then fallback to Base preprocess."""
+        state = super().preprocess_state(state)
+        try:
+            if getattr(self, "obs_rms", None) is not None and self.obs_rms.count > 0:
+                mean = torch.from_numpy(self.obs_rms.mean).to(self.device).to(state.dtype)
+                var = torch.from_numpy(self.obs_rms.var).to(self.device).to(state.dtype)
+                state = (state - mean) / torch.sqrt(var + 1e-8)
+        except Exception:
+            pass
+        return state
 
     def actor_loss(
         self,

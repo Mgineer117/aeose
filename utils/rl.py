@@ -1,7 +1,60 @@
 import torch
 import torch.nn as nn
+import numpy as np
 
 from utils.sampler import OnlineSampler
+
+
+class RunningMeanStd:
+    """Numerically-stable running mean / variance for observation normalization.
+
+    Usage:
+        rms = RunningMeanStd(shape)
+        rms.update(batch)   # batch: (N, dim) numpy or torch
+        x_norm = (x - rms.mean) / sqrt(rms.var + eps)
+    """
+
+    def __init__(self, shape):
+        if isinstance(shape, int):
+            shape = (shape,)
+        self.mean = np.zeros(shape, dtype=np.float64)
+        self.var = np.ones(shape, dtype=np.float64)
+        self.count = 0
+
+    def update(self, x):
+        # Accept torch tensor or numpy array
+        if isinstance(x, torch.Tensor):
+            arr = x.detach().cpu().numpy()
+        else:
+            arr = np.array(x)
+
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+
+        batch_mean = np.mean(arr, axis=0)
+        batch_var = np.var(arr, axis=0)
+        batch_count = arr.shape[0]
+
+        if self.count == 0:
+            self.mean = batch_mean
+            self.var = batch_var
+            self.count = batch_count
+            return
+
+        delta = batch_mean - self.mean
+        tot_count = self.count + batch_count
+
+        new_mean = self.mean + delta * batch_count / tot_count
+
+        m_a = self.var * self.count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + (delta ** 2) * self.count * batch_count / tot_count
+        new_var = M2 / tot_count
+
+        self.mean = new_mean
+        self.var = new_var
+        self.count = tot_count
+
 
 
 def estimate_advantages(

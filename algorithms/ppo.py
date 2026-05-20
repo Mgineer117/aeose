@@ -25,16 +25,33 @@ class PPO_Algorithm(nn.Module):
         # PPO should use the vectorized rollout path by default.
         # The sampler switches from serial env stepping to batched stepping
         # when envs_per_worker > 1.
-        envs_per_worker = max(2, int(getattr(self.args, "envs_per_worker", 4)))
+        # If the environment does not expose a decision-step `max_steps`,
+        # fall back to spawning `num_minibatch` workers (or vectorized groups)
+        # and let each worker collect up to `minibatch_size` steps. This
+        # produces a total batch of `minibatch_size * num_minibatch` as
+        # expected by the learner.
+        total_batch = int(self.args.minibatch_size * self.args.num_minibatch)
+
+        if getattr(self.env, "max_steps", None) is None and getattr(
+            self.args, "episode_len", None
+        ) is None:
+            episode_len = int(self.args.minibatch_size)
+            # spawn one env per minibatch (workers collect minibatch_size each)
+            num_workers = max(1, int(getattr(self.args, "num_minibatch", 1)))
+            envs_per_worker = 1
+        else:
+            episode_len = int(getattr(self.env, "max_steps", self.args.episode_len))
+            num_workers = max(1, int(getattr(self.args, "num_workers", 3)))
+            envs_per_worker = max(2, int(getattr(self.args, "envs_per_worker", 4)))
 
         # === Sampler === #
         sampler = OnlineSampler(
             env_name=self.args.env_name,
             state_dim=self.args.state_dim,
             action_dim=self.args.action_dim,
-            episode_len=self.env.max_steps,
-            batch_size=int(self.args.minibatch_size * self.args.num_minibatch),
-            num_workers=max(1, int(getattr(self.args, "num_workers", 3))),
+            episode_len=episode_len,
+            batch_size=total_batch,
+            num_workers=num_workers,
             envs_per_worker=envs_per_worker,
             sampler_mode=getattr(self.args, "sampler_mode", "vectorized"),
         )

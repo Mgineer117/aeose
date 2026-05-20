@@ -31,9 +31,27 @@ def run_one_episode(env, verbose=True):
         ns, rew, term, trunc, info = env.step(a)
         step += 1
 
+        # determine an action index for logging (works for int or vector actions)
+        try:
+            import numpy as _np
+
+            if _np.isscalar(a) or isinstance(a, (int,)):
+                action_idx = int(a)
+            else:
+                action_arr = _np.array(a)
+                if action_arr.ndim == 0:
+                    action_idx = int(action_arr)
+                else:
+                    action_idx = int(_np.argmax(action_arr))
+        except Exception:
+            # fallback: stringify
+            action_idx = str(a)
+
         sim_time = getattr(getattr(env, 'simulator', None), 'sim_time', None)
         if verbose:
-            print(f"step={step:3d} term={term} trunc={trunc} rew={rew:.3f} sim_time={sim_time} info_keys={list(info.keys()) if isinstance(info, dict) else info}")
+            print(
+                f"step={step:3d} action={action_idx} term={term} trunc={trunc} rew={rew:.3f} sim_time={sim_time} info_keys={list(info.keys()) if isinstance(info, dict) else info}"
+            )
 
         # If env declares done, record and return
         if term or trunc:
