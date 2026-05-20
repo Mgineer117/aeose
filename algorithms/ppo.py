@@ -62,7 +62,7 @@ class PPO_Algorithm(nn.Module):
             sampler=sampler,
             logger=self.logger,
             writer=self.writer,
-            episode_len=self.env.max_steps,
+            episode_len=episode_len,
             timesteps=self.args.timesteps,
             log_interval=self.args.log_interval,
             eval_num=self.args.eval_num,
