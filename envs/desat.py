@@ -8,10 +8,7 @@ from envs import build_targets, decision_interval, duration, n_ahead, orbit_alt_
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
-# Import GlobalReward and provide a compatibility fallback for NoDataStore
-from bsk_rl.data.base import DataStore, GlobalReward
-from bsk_rl.data.no_data import NoDataStore
-from bsk_rl.data.unique_image_data import UniqueImageReward
+from envs.reward_utils import AgileEOSReward, TerminationGuard
 
 
 class Density(obs.Observation):
@@ -74,6 +71,18 @@ def power_sat_generator(n_ahead=32, include_time=False):
 
         fsw_type = fsw.SteeringImagerFSWModel
 
+        def is_alive(self, log_failure=True) -> bool:
+            if not super().is_alive(log_failure=log_failure):
+                return False
+            frac = getattr(self.dynamics, "storage_level_fraction", None)
+            if frac is not None and frac >= 0.98:
+                if log_failure:
+                    self.dynamics.logger.warning(
+                        f"Satellite {self.name} failed: storage level fraction {frac:.4f} >= 0.98"
+                    )
+                return False
+            return True
+
     return PowerSat
 
 
@@ -106,38 +115,20 @@ SAT_ARGS_POWER.update(
         maxWheelSpeed=6000.0,  # ~630 rad/s defining max wheel speed to help with wheel_speeds_fraction observation #https://www.aac-clyde.space/what-we-do/space-products-components/adcs/rw400
         wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),
         desatAttitude="nadir",  # feel like we shouold desat to sun-pointing to help with power generation during desat
-        storageInit=lambda: np.random.randint(
-            0, int(0.01 * SAT_ARGS["dataStorageCapacity"])
-        ),
-        # transmitterBaudRate=-50 * 8e6,      # bits/s  (NEGATIVE drains buffer during Downlink)
-        # transmitterPowerDraw=-25.0,         # W       (power draw while Downlinking
-        instrumentBaudRate=+5 * 8e6,  # bits/s produced while imaging (e.g., 5 MB/s)
-        basePowerDraw=-10.0,  # W always-on loads (negative = consumption)
-        panelArea=0.25,  # m^2 of solar array (tune as needed)
+        storageInit=0,
+        transmitterBaudRate=-50 * 8e6,
+        transmitterPowerDraw=-25.0,
+        instrumentBaudRate=5 * 8e6,
+        basePowerDraw=-10.0,
+        panelArea=0.425,
     )
 )
 
 
-class TerminationGuard(GlobalReward):
-    # Adds failure/termination only; contributes zero reward
-    data_store_type = NoDataStore  # any store type works; we don't use new data
-
-    def calculate_reward(self, new_data_dict):
-        # No reward contribution; leave imaging reward to UniqueImageReward
-        return {sat_id: 0.0 for sat_id in new_data_dict.keys()}
-
-    def is_terminated(self, satellite) -> bool:
-        dyn = satellite.dynamics
-        if hasattr(dyn, "battery_valid") and not dyn.battery_valid():
-            return True
-        if hasattr(dyn, "rw_speeds_valid") and not dyn.rw_speeds_valid():
-            return True
-        frac = getattr(dyn, "storage_level_fraction", None)
-        if frac is not None and frac >= 0.98:
-            return True
-        return False
-
 targets = build_targets(scene)
+
+max_step_duration = decision_interval
+n_intervals = int(np.ceil(duration / max_step_duration))
 
 
 def get_desat_env(n_ahead=n_ahead):
@@ -147,9 +138,12 @@ def get_desat_env(n_ahead=n_ahead):
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
-        rewarder=(data.UniqueImageReward(), TerminationGuard()),
+        rewarder=(
+            AgileEOSReward(n_intervals=n_intervals),
+            TerminationGuard(),
+        ),
         sim_rate=0.5,
-        max_step_duration=decision_interval,
+        max_step_duration=max_step_duration,
         time_limit=duration,
         failure_penalty=-10.0,
         terminate_on_time_limit=True,

@@ -2,10 +2,11 @@ import numpy as np
 from Basilisk.architecture import bskLogging
 from Basilisk.utilities import orbitalMotion
 
-from bsk_rl import SatelliteTasking, act, data, obs, sats, scene
+from bsk_rl import SatelliteTasking, act, obs, sats, scene
 from bsk_rl.sim import fsw
 from bsk_rl.utils.orbital import random_orbit
 from envs import build_targets, decision_interval, duration, n_ahead, orbit_alt_km
+from envs.reward_utils import AgileEOSReward, TerminationGuard
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
@@ -65,6 +66,18 @@ def power_sat_generator(n_ahead=32, include_time=False):
 
         fsw_type = fsw.SteeringImagerFSWModel
 
+        def is_alive(self, log_failure=True) -> bool:
+            if not super().is_alive(log_failure=log_failure):
+                return False
+            frac = getattr(self.dynamics, "storage_level_fraction", None)
+            if frac is not None and frac >= 0.98:
+                if log_failure:
+                    self.dynamics.logger.warning(
+                        f"Satellite {self.name} failed: storage level fraction {frac:.4f} >= 0.98"
+                    )
+                return False
+            return True
+
     return PowerSat
 
 
@@ -94,32 +107,39 @@ SAT_ARGS_POWER.update(
         instrumentPowerDraw=-10,
         thrusterPowerDraw=-30,
         nHat_B=np.array([0, 0, -1]),
+        maxWheelSpeed=6000.0,
         wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),
         desatAttitude="nadir",
+        storageInit=0,
+        transmitterBaudRate=-50 * 8e6,
+        transmitterPowerDraw=-25.0,
+        instrumentBaudRate=5 * 8e6,
+        basePowerDraw=-10.0,
+        panelArea=0.425,
     )
 )
 
 targets = build_targets(scene)
 
+max_step_duration = decision_interval
+n_intervals = int(np.ceil(duration / max_step_duration))
+
 
 def get_resource_env(n_ahead=n_ahead):
-    resource_fn = lambda sat: sat.dynamics.battery_charge_fraction  # or equivalent
-    reward_weight = 1e-1
-
     env = SatelliteTasking(
         satellite=power_sat_generator(n_ahead=n_ahead, include_time=False)(
             name="EO1-power",
             sat_args=SAT_ARGS_POWER,
         ),
         scenario=targets,
-        rewarder=[
-            data.UniqueImageReward(),
-            data.ResourceReward(reward_weight=reward_weight, resource_fn=resource_fn),
-        ],
+        rewarder=(
+            AgileEOSReward(n_intervals=n_intervals),
+            TerminationGuard(),
+        ),
         sim_rate=0.5,
-        max_step_duration=decision_interval,
+        max_step_duration=max_step_duration,
         time_limit=duration,
-        failure_penalty=0.0,
+        failure_penalty=-10.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
     )
