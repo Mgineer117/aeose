@@ -134,14 +134,14 @@ SAT_ARGS_POWER = {}
 SAT_ARGS_POWER.update(SAT_ARGS)
 SAT_ARGS_POWER.update(
     dict(
-        batteryStorageCapacity=120.0 * 3600,
-        storedCharge_Init=lambda: 120.0 * 3600 * np.random.uniform(0.4, 1.0),
-        rwBasePower=20.4,
+        batteryStorageCapacity=150.0 * 3600,
+        storedCharge_Init=lambda: 150.0 * 3600 * np.random.uniform(0.1, 0.3),
+        rwBasePower=22.0,
         instrumentPowerDraw=-10,
         thrusterPowerDraw=-30,
         nHat_B=np.array([0, 0, -1]),
-        maxWheelSpeed=6000.0,
-        wheelSpeeds=lambda: np.random.uniform(-2000, 2000, 3),
+        maxWheelSpeed=2000.0,
+        wheelSpeeds=lambda: np.random.uniform(-1500, 1500, 3),
         desatAttitude="nadir",
         # Changed from random initial storage to empty storage.
         # This is important for target-based downlink reward:
@@ -153,7 +153,7 @@ SAT_ARGS_POWER.update(
         transmitterPowerDraw=-25.0,
         instrumentBaudRate=5 * 8e6,
         basePowerDraw=-10.0,
-        panelArea=0.425 # 0.25,
+        panelArea=0.5, # 0.25,
     )
 )
 

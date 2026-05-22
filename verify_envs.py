@@ -59,14 +59,14 @@ def verify_env(env_name):
     sat_args = sat.sat_args
     
     expected_args = {
-        "batteryStorageCapacity": 120.0 * 3600,
-        "maxWheelSpeed": 6000.0,
+        "batteryStorageCapacity": 150.0 * 3600,
+        "maxWheelSpeed": 2000.0,
         "storageInit": 0,
         "transmitterBaudRate": -50 * 8e6,
         "transmitterPowerDraw": -25.0,
         "instrumentBaudRate": 5 * 8e6,
         "basePowerDraw": -10.0,
-        "panelArea": 0.425,
+        "panelArea": 0.5,
     }
     
     for key, expected_val in expected_args.items():
