@@ -211,21 +211,21 @@ class AgileEOSReward(GlobalReward):
             rewards[sat_id] = 0.0
 
             # First-time imaging reward:
-            # paper term = 0.1 / |I| * H(w_j)
+            # paper term = 0.1 * H(w_j)
             # where H(w_j) = 1 / p_j if not previously imaged and now imaged.
             for target in new_data.imaged:
                 if target not in self.data.imaged:
                     rewards[sat_id] += (
-                        0.1 / self.n_intervals * self._priority_weight(target)
+                        0.1 * self._priority_weight(target)
                     )
 
             # First-time downlink reward:
-            # paper term = 1 / |I| * H(d_j)
+            # paper term = sum H(d_j)
             # where H(d_j) = 1 / p_j if not previously downlinked and now downlinked.
             for target in new_data.downlinked:
                 if target not in self.data.downlinked:
                     rewards[sat_id] += (
-                        1.0 / self.n_intervals * self._priority_weight(target)
+                        1.0 * self._priority_weight(target)
                     )
 
         return rewards
