@@ -102,7 +102,7 @@ SAT_ARGS_POWER.update(SAT_ARGS)
 SAT_ARGS_POWER.update(
     dict(
         batteryStorageCapacity=150.0 * 3600,
-        storedCharge_Init=lambda: 150.0 * 3600 * np.random.uniform(0.1, 0.3),
+        storedCharge_Init=lambda: 150.0 * 3600 * np.random.uniform(0.3, 0.7),
         rwBasePower=22.0,
         instrumentPowerDraw=-10,
         thrusterPowerDraw=-30,
@@ -115,7 +115,7 @@ SAT_ARGS_POWER.update(
         transmitterPowerDraw=-25.0,
         instrumentBaudRate=5 * 8e6,
         basePowerDraw=-10.0,
-        panelArea=0.5,
+        panelArea=0.5, # 0.25,
     )
 )
 
