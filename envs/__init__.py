@@ -8,7 +8,7 @@ from bsk_rl.utils.orbital import random_orbit
 duration = 5700.0 * 5  # 5 orbits, matching Herrmann 2023
 decision_interval = 360.0  # 6 min planning interval
 orbit_alt_km = 500
-target_distribution = "paper"
+target_distribution = "uniform"
 n_targets = 135
 n_ahead = 3
 
