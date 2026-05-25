@@ -7,7 +7,7 @@ from bsk_rl.utils.orbital import random_orbit
 
 duration = 5700.0 * 5  # 5 orbits, matching Herrmann 2023
 decision_interval = 360.0  # 6 min planning interval
-orbit_alt_km = 500
+orbit_alt_km = 800 # 500
 target_distribution = "uniform"
 n_targets = 135
 n_ahead = 3
@@ -97,6 +97,44 @@ def build_targets(scene_module):
 		)
 	raise ValueError(f"Unknown target_distribution: {target_distribution}")
 
+SAT_ARGS = dict(
+    imageAttErrorRequirement=0.01,
+    imageRateErrorRequirement=0.01,
+    batteryStorageCapacity=120.0 * 3600,
+    storedCharge_Init=120.0 * 3600,
+    dataStorageCapacity=200 * 8e6 * 100,
+    u_max=0.4,
+    imageTargetMinimumElevation=np.arctan(800 / 500),
+    K1=0.25,
+    K3=3.0,
+    omega_max=np.radians(5),
+    servo_Ki=5.0,
+    servo_P=150 / 5,
+    oe=lambda: random_orbit(alt=orbit_alt_km),
+)
+
+SAT_ARGS_POWER = {}
+SAT_ARGS_POWER.update(SAT_ARGS)
+SAT_ARGS_POWER.update(
+    dict(
+        batteryStorageCapacity=120.0 * 3600,
+        storedCharge_Init=lambda: 120.0 * 3600 * np.random.uniform(0.3, 0.7),
+        rwBasePower=20.4,
+        instrumentPowerDraw=-10.0,
+        thrusterPowerDraw=-30.0,
+        nHat_B=np.array([0, 0, -1]),
+        maxWheelSpeed=6000.0,
+        wheelSpeeds=lambda: np.random.uniform(-5000, 5000, 3),
+        desatAttitude="nadir",
+        storageInit=0,
+        transmitterBaudRate=-50 * 8e6,
+        transmitterPowerDraw=-25.0,
+        instrumentBaudRate=5 * 8e6,
+        basePowerDraw=-10.0,
+        panelArea=0.45,
+    )
+)
+
 from envs.charge import get_charge_env
 from envs.desat import get_desat_env
 from envs.downlink import get_downlink_env
@@ -110,6 +148,8 @@ __all__ = [
 	"n_targets",
 	"n_ahead",
 	"build_targets",
+    "SAT_ARGS",
+    "SAT_ARGS_POWER",
 	"get_charge_env",
 	"get_desat_env",
 	"get_downlink_env",

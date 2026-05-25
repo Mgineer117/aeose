@@ -7,7 +7,7 @@ from bsk_rl.sim import dyn, fsw, world
 from bsk_rl.utils.orbital import random_orbit, rv2HN
 
 from envs.reward_utils import AgileEOSReward, TerminationGuard
-from envs import build_targets, decision_interval, duration, n_ahead, orbit_alt_km
+from envs import build_targets, decision_interval, duration, n_ahead, orbit_alt_km, SAT_ARGS_POWER
 
 bskLogging.setDefaultLogLevel(bskLogging.BSK_WARNING)
 
@@ -113,49 +113,7 @@ def power_sat_generator(n_ahead=32, include_time=False):
     return PowerSat
 
 
-SAT_ARGS = dict(
-    imageAttErrorRequirement=0.01,
-    imageRateErrorRequirement=0.01,
-    batteryStorageCapacity=80.0 * 3600 * 100,
-    storedCharge_Init=80.0 * 3600 * 100.0,
-    dataStorageCapacity=200 * 8e6 * 100,
-    u_max=0.4,
-    imageTargetMinimumElevation=np.arctan(800 / 500),
-    K1=0.25,
-    K3=3.0,
-    omega_max=np.radians(5),
-    servo_Ki=5.0,
-    servo_P=150 / 5,
-    oe=lambda: random_orbit(alt=orbit_alt_km),
-)
 
-
-SAT_ARGS_POWER = {}
-SAT_ARGS_POWER.update(SAT_ARGS)
-SAT_ARGS_POWER.update(
-    dict(
-        batteryStorageCapacity=150.0 * 3600,
-        storedCharge_Init=lambda: 150.0 * 3600 * np.random.uniform(0.3, 0.7),
-        rwBasePower=22.0,
-        instrumentPowerDraw=-10,
-        thrusterPowerDraw=-30,
-        nHat_B=np.array([0, 0, -1]),
-        maxWheelSpeed=2000.0,
-        wheelSpeeds=lambda: np.random.uniform(-1500, 1500, 3),
-        desatAttitude="nadir",
-        # Changed from random initial storage to empty storage.
-        # This is important for target-based downlink reward:
-        # if the buffer starts with random bits, those bits do not correspond
-        # to known imaged targets, so they cannot be rewarded like paper.
-        storageInit=0,
-        # Imaging and downlink data rates.
-        transmitterBaudRate=-50 * 8e6,
-        transmitterPowerDraw=-25.0,
-        instrumentBaudRate=5 * 8e6,
-        basePowerDraw=-10.0,
-        panelArea=0.5, # 0.25,
-    )
-)
 
 
 
