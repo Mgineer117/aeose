@@ -337,13 +337,11 @@ class PointMazeWrapper(gym.Wrapper):
 class ActionSuccessWrapper(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.total_steps = 0
         self.success_image = 0
         self.success_desat = 0
         self.success_downlink = 0
 
     def reset(self, **kwargs):
-        self.total_steps = 0
         self.success_image = 0
         self.success_desat = 0
         self.success_downlink = 0
@@ -377,8 +375,8 @@ class ActionSuccessWrapper(gym.Wrapper):
         if "desat" in action_key and is_saturated:
             self.success_desat += 1
 
-        info["image_success_rate"] = self.success_image / self.total_steps
-        info["desat_success_rate"] = self.success_desat / self.total_steps
-        info["downlink_success_rate"] = self.success_downlink / self.total_steps
+        info["image_success_rate"] = self.success_image
+        info["desat_success_rate"] = self.success_desat
+        info["downlink_success_rate"] = self.success_downlink
 
         return obs, reward, terminated, truncated, info
