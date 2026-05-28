@@ -108,7 +108,7 @@ def get_desat_env(n_ahead=n_ahead):
         sim_rate=0.5,
         max_step_duration=max_step_duration,
         time_limit=duration,
-        failure_penalty=-1.0,
+        failure_penalty=-10.0,
         terminate_on_time_limit=True,
         log_level="ERROR",
     )
