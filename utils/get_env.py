@@ -1,4 +1,5 @@
 from envs import get_downlink_env, get_desat_env, get_charge_env, get_resource_env
+from utils.wrapper import ActionSuccessWrapper
 
 
 def get_env(env_name, n_ahead=None):
@@ -20,4 +21,6 @@ def get_env(env_name, n_ahead=None):
         )
     else:
         raise NotImplementedError(f"{env_name} is not implemented.")
+    
+    env = ActionSuccessWrapper(env)
     return env

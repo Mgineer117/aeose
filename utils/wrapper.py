@@ -332,3 +332,53 @@ class PointMazeWrapper(gym.Wrapper):
         rgb_img[~mask, :] = 0.5
 
         return rgb_img
+
+
+class ActionSuccessWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.total_steps = 0
+        self.success_image = 0
+        self.success_desat = 0
+        self.success_downlink = 0
+
+    def reset(self, **kwargs):
+        self.total_steps = 0
+        self.success_image = 0
+        self.success_desat = 0
+        self.success_downlink = 0
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        # Capture state before the step to evaluate desat condition
+        is_saturated = False
+        try:
+            wheel_fraction = self.env.unwrapped.satellite.dynamics.wheel_speeds_fraction
+            max_wheel_frac = np.max(np.abs(wheel_fraction))
+            is_saturated = max_wheel_frac > 0.7
+        except Exception:
+            pass
+
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self.total_steps += 1
+
+        action_key = ""
+        try:
+            action_key = self.env.unwrapped.satellite.action_builder.prev_action_key
+        except Exception:
+            pass
+
+        if "image" in action_key and reward > 0:
+            self.success_image += 1
+        
+        if "downlink" in action_key and reward > 0:
+            self.success_downlink += 1
+        
+        if "desat" in action_key and is_saturated:
+            self.success_desat += 1
+
+        info["image_success_rate"] = self.success_image / self.total_steps
+        info["desat_success_rate"] = self.success_desat / self.total_steps
+        info["downlink_success_rate"] = self.success_downlink / self.total_steps
+
+        return obs, reward, terminated, truncated, info
