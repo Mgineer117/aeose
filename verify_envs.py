@@ -25,7 +25,7 @@ def verify_env(env_name):
     
     # 2. Check failure_penalty
     print(f"[*] Checking failure penalty...")
-    assert env.failure_penalty == -10.0, f"Expected failure penalty to be -10.0, got {env.failure_penalty}"
+    assert env.failure_penalty == -1.0, f"Expected failure penalty to be -1.0, got {env.failure_penalty}"
     print(f"  - failure_penalty: {env.failure_penalty} (OK)")
     
     # 3. Check rewarder types
