@@ -217,6 +217,9 @@ class OffPolicyTrainer:
                                 ep_reward, self.policy.gamma
                             ),
                             "inf_time": np.mean(ep_inf),
+                            "image_success": infos.get("image_success_rate", 0),
+                            "desat_success": infos.get("desat_success_rate", 0),
+                            "downlink_success": infos.get("downlink_success_rate", 0),
                         }
                     )
 
@@ -232,6 +235,9 @@ class OffPolicyTrainer:
             f"eval/return_std": return_std,
             f"eval/inf_time_mean": inf_time_mean,
             f"eval/inf_time_std": inf_time_std,
+            f"eval/image_success": np.mean([ep["image_success"] for ep in ep_buffer]),
+            f"eval/desat_success": np.mean([ep["desat_success"] for ep in ep_buffer]),
+            f"eval/downlink_success": np.mean([ep["downlink_success"] for ep in ep_buffer]),
         }
 
         return eval_dict, image_array
