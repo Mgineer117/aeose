@@ -60,7 +60,7 @@ def get_args():
         "--actor-fc-dim",
         type=int,
         nargs="+",
-        default=[256, 256],
+        default=[1024, 1024],
     )
     parser.add_argument(
         "--target-actor-fc-dim", type=int, nargs="+", default=[1024, 1024]
@@ -69,7 +69,7 @@ def get_args():
     parser.add_argument(
         "--activation",
         type=str,
-        default="tanh",
+        default="leakyrelu",
         choices=list(_ACTIVATIONS.keys()),
         help="Activation function used in the actor and critic MLPs.",
     )

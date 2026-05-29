@@ -340,22 +340,28 @@ class ActionSuccessWrapper(gym.Wrapper):
         self.success_image = 0
         self.success_desat = 0
         self.success_downlink = 0
+        self.success_charge = 0
         self.total_steps = 0
 
     def reset(self, **kwargs):
         self.success_image = 0
         self.success_desat = 0
         self.success_downlink = 0
+        self.success_charge = 0
         self.total_steps = 0
         return self.env.reset(**kwargs)
 
     def step(self, action):
         # Capture state before the step to evaluate desat condition
         is_saturated = False
+        is_battery_low = False
         try:
             wheel_fraction = self.env.unwrapped.satellite.dynamics.wheel_speeds_fraction
             max_wheel_frac = np.max(np.abs(wheel_fraction))
             is_saturated = max_wheel_frac > 0.7
+            
+            battery_fraction = self.env.unwrapped.satellite.dynamics.battery_charge_fraction
+            is_battery_low = battery_fraction < 0.5
         except Exception:
             pass
 
@@ -375,9 +381,13 @@ class ActionSuccessWrapper(gym.Wrapper):
         
         if "desat" in action_key and is_saturated:
             self.success_desat += 1
+            
+        if "charge" in action_key and is_battery_low:
+            self.success_charge += 1
 
         info["image_success_rate"] = self.success_image
         info["desat_success_rate"] = self.success_desat
         info["downlink_success_rate"] = self.success_downlink
+        info["charge_success_rate"] = self.success_charge
 
         return obs, reward, terminated, truncated, info
