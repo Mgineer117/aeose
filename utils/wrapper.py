@@ -340,11 +340,13 @@ class ActionSuccessWrapper(gym.Wrapper):
         self.success_image = 0
         self.success_desat = 0
         self.success_downlink = 0
+        self.total_steps = 0
 
     def reset(self, **kwargs):
         self.success_image = 0
         self.success_desat = 0
         self.success_downlink = 0
+        self.total_steps = 0
         return self.env.reset(**kwargs)
 
     def step(self, action):
@@ -358,7 +360,6 @@ class ActionSuccessWrapper(gym.Wrapper):
             pass
 
         obs, reward, terminated, truncated, info = self.env.step(action)
-        self.total_steps += 1
 
         action_key = ""
         try:
