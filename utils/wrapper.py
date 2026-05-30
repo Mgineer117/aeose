@@ -343,6 +343,13 @@ class ActionSuccessWrapper(gym.Wrapper):
         self.success_charge = 0
         self.total_steps = 0
 
+    @property
+    def satellite(self):
+        return self.env.unwrapped.satellite
+
+    def __getattr__(self, name):
+        return getattr(self.env, name)
+
     def reset(self, **kwargs):
         self.success_image = 0
         self.success_desat = 0
@@ -373,7 +380,7 @@ class ActionSuccessWrapper(gym.Wrapper):
         except Exception:
             pass
 
-        if "image" in action_key and reward > 0:
+        if "tgt-" in action_key and reward > 0:
             self.success_image += 1
         
         if "downlink" in action_key and reward > 0:

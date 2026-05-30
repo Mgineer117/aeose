@@ -44,8 +44,8 @@ class Density(obs.Observation):
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
         action_spec = [
-            act.Image(n_ahead_image=n_ahead),
             act.Charge(),
+            act.Image(n_ahead_image=n_ahead),
             act.Desat(),
         ]  # included Desat action
         observation_spec = [

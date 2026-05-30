@@ -42,7 +42,7 @@ class Density(obs.Observation):
 
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
-        action_spec = [act.Image(n_ahead_image=n_ahead), act.Charge()]
+        action_spec = [act.Charge(), act.Image(n_ahead_image=n_ahead)]
         observation_spec = [
             obs.SatProperties(
                 dict(prop="omega_BH_H", norm=0.03),

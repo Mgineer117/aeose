@@ -66,12 +66,12 @@ class PowerSatDyn(dyn.GroundStationDynModel, dyn.ImagingDynModel):
 
 def power_sat_generator(n_ahead=32, include_time=False):
     class PowerSat(sats.ImagingSatellite):
-        # charge, desat, downlink, image one of the upcoming targets.
+        # charge, image, desat, downlink one of the upcoming targets.
         action_spec = [
             act.Charge(),
+            act.Image(n_ahead_image=n_ahead),
             act.Desat(),
             act.Downlink(),
-            act.Image(n_ahead_image=n_ahead),
         ]
 
         observation_spec = [
