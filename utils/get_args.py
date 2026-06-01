@@ -48,7 +48,7 @@ def get_args():
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=1e-4, help="Base learning rate."
+        "--actor-lr", type=float, default=3e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--critic-lr", type=float, default=3e-4, help="Base learning rate."
@@ -94,7 +94,7 @@ def get_args():
     parser.add_argument(
         "--target-kl",
         type=float,
-        default=0.01,
+        default=0.03,
         help="Upper bound of the eigenvalue of the dual metric.",
     )
     parser.add_argument(
