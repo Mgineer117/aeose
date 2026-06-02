@@ -94,7 +94,7 @@ def get_args():
     parser.add_argument(
         "--target-kl",
         type=float,
-        default=0.03,
+        default=0.02,
         help="Upper bound of the eigenvalue of the dual metric.",
     )
     parser.add_argument(
