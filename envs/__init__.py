@@ -5,10 +5,10 @@ from Basilisk.utilities import orbitalMotion
 from bsk_rl.scene.targets import Target, UniformTargets
 from bsk_rl.utils.orbital import random_orbit
 
-duration = 5700.0 * 5  # 5 orbits, matching Herrmann 2023
+duration = 5700.0 * 3  # 3 orbits, matching Herrmann 2023
 decision_interval = 360.0  # 6 min planning interval
-orbit_alt_km = 800 # 500
-target_distribution = "uniform"
+orbit_alt_km = 500 # 500
+target_distribution = "paper"
 n_targets = 135
 n_ahead = 3
 
