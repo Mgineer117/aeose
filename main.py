@@ -47,12 +47,17 @@ def run(args, seed, unique_id, exp_time, run_id):
     else:
         raise NotImplementedError(f"{args.algo_name} is not implemented.")
 
-    algo.begin_training()
+    result = algo.begin_training()
+
+    if result and "max_eval_return" in result:
+        wandb.log({"max_eval_return": result["max_eval_return"]})
 
     # ✅ Memory cleanup
     del algo, env, logger, writer  # delete large references
     torch.cuda.empty_cache()  # release unreferenced GPU memory
     wandb.finish()
+
+    return result
 
 
 if __name__ == "__main__":

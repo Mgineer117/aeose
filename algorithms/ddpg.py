@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from policy.ddpg import DDPG_Learner
 from policy.layers.td3_network import TD3_Actor, TD3_Actor_From_Critic, TD3_Critic
-from offpolicy_trainer import OffPolicyTrainer
+from trainers.offpolicy_trainer import OffPolicyTrainer
 from utils.replay_buffer import ReplayBuffer
 
 
@@ -44,7 +44,7 @@ class DDPG_Algorithm(nn.Module):
             seed=self.args.seed,
         )
 
-        trainer.train()
+        return trainer.train()
 
     def define_policy(self):
         if self.args.is_discrete:

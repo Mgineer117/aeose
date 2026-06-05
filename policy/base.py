@@ -42,9 +42,9 @@ class Base(nn.Module):
         Preprocess the state to the required format.
         """
         if isinstance(state, torch.Tensor):
-            state = state.to(self.device)
+            state = state.to(self.dtype).to(self.device)
         elif isinstance(state, np.ndarray):
-            state = torch.from_numpy(state).to(self.device).to(self.dtype)
+            state = torch.from_numpy(state).to(self.dtype).to(self.device)
         else:
             raise ValueError("Unsupported state type. Must be a tensor or numpy array.")
 

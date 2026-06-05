@@ -165,6 +165,7 @@ class Trainer:
         self.logger.print(
             f"Total {self.policy.name} training time: {(time.time() - start_time) / 3600} hours"
         )
+        return {"max_eval_return": self.last_max_return_mean}
 
     def _run_eval(self, step, save=False, eval_idx=None, force_save=False):
         """Run one evaluation pass and (optionally) checkpoint."""

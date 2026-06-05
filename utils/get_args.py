@@ -88,7 +88,7 @@ def get_args():
         "--eval-num", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument("--num-minibatch", type=int, default=4, help="")
-    parser.add_argument("--minibatch-size", type=int, default=512, help="")
+    parser.add_argument("--minibatch-size", type=int, default=1024, help="")
     parser.add_argument("--batch-size", type=int, default=512, help="")
     parser.add_argument("--K-epochs", type=int, default=10, help="")
     parser.add_argument(
@@ -317,24 +317,22 @@ def get_args():
 
 
 def select_device(gpu_idx=0, verbose=False):
+    device = torch.device("cpu")
+    if torch.cuda.is_available() and gpu_idx is not None:
+        device = torch.device("cuda:" + str(gpu_idx))
+        torch.cuda.empty_cache()
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = torch.device("mps")
+
     if verbose:
         print(
             "============================================================================================"
         )
-        # set device to cpu or cuda
-        device = torch.device("cpu")
-        if torch.cuda.is_available() and gpu_idx is not None:
-            device = torch.device("cuda:" + str(gpu_idx))
-            torch.cuda.empty_cache()
+        if device.type == "cuda":
             print("Device set to : " + str(torch.cuda.get_device_name(device)))
         else:
-            print("Device set to : cpu")
+            print(f"Device set to : {device.type}")
         print(
             "============================================================================================"
         )
-    else:
-        device = torch.device("cpu")
-        if torch.cuda.is_available() and gpu_idx is not None:
-            device = torch.device("cuda:" + str(gpu_idx))
-            torch.cuda.empty_cache()
     return device

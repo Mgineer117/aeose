@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from base_trainer import Trainer
+from trainers.base_trainer import Trainer
 from policy.layers.ppo_networks import PPO_Actor, PPO_Critic
 from policy.ppo import PPO_Learner
 from utils.sampler import OnlineSampler
@@ -71,7 +71,7 @@ class PPO_Algorithm(nn.Module):
             async_sampling=getattr(self.args, "async_sampling", False),
         )
 
-        trainer.train()
+        return trainer.train()
 
     def define_policy(self):
         replay_buffer = ReplayBuffer(

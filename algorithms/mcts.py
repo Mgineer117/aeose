@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from base_trainer import Trainer
+from trainers.base_trainer import Trainer
 from policy.layers.ppo_networks import PPO_Critic
 from policy.mcts import MCTS_Learner, MCTS_Offline_Learner
 from utils.sampler import OnlineSampler
@@ -67,7 +67,7 @@ class MCTS_Algorithm(nn.Module):
             async_sampling=getattr(self.args, "async_sampling", False),
         )
         
-        trainer.train()
+        return trainer.train()
     
     def define_policy(self):
         """Define MCTS learner with critic network."""

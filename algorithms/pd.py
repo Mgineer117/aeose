@@ -4,7 +4,7 @@ import os
 import torch
 import torch.nn as nn
 
-from pd_trainer import PDTrainer
+from trainers.pd_trainer import PDTrainer
 from policy.layers.ppo_networks import PPO_Actor, PPO_Critic
 from policy.pd import PD_Learner
 
@@ -38,7 +38,7 @@ class PD_Algorithm(nn.Module):
             student_rollout_deterministic=self.args.pd_student_rollout_deterministic,
         )
 
-        trainer.train()
+        return trainer.train()
 
     def define_policy(self):
         actor = PPO_Actor(
