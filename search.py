@@ -101,6 +101,9 @@ if __name__ == "__main__":
         print(f"To run additional agents in parallel, run:")
         print(f"python search.py --sweep_id {sweep_id}")
         print(f"=======================================================\n")
+        
+        if search_args.count == 0:
+            sys.exit(0)
     else:
         sweep_id = search_args.sweep_id
         print(f"\nJoining EXISTING wandb sweep with ID: {sweep_id}\n")
