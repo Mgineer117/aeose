@@ -34,7 +34,6 @@ def train():
     # Pick a random seed for this trial
     seed = random.randint(1, 10000)
     args.seed = seed
-    args.timesteps = 5000
     
     # We set num_runs to 1 as we only want one execution per sweep combination
     args.num_runs = 1
