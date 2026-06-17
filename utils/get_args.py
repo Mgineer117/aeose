@@ -48,10 +48,10 @@ def get_args():
     )
 
     parser.add_argument(
-        "--actor-lr", type=float, default=3e-4, help="Base learning rate."
+        "--actor-lr", type=float, default=2e-4, help="Base learning rate."
     )
     parser.add_argument(
-        "--critic-lr", type=float, default=3e-4, help="Base learning rate."
+        "--critic-lr", type=float, default=2e-4, help="Base learning rate."
     )
     parser.add_argument(
         "--eps-clip", type=float, default=0.2, help="Base learning rate."
@@ -75,7 +75,7 @@ def get_args():
     )
 
     parser.add_argument(
-        "--timesteps", type=int, default=int(1e7), help="Number of training epochs."
+        "--timesteps", type=int, default=int(2e7), help="Number of training epochs."
     )
     parser.add_argument(
         "--epochs", type=int, default=int(100000), help="Number of training epochs."
@@ -100,11 +100,11 @@ def get_args():
     parser.add_argument(
         "--gae",
         type=float,
-        default=0.95,
+        default=0.98,
         help="Lower bound of the eigenvalue of the dual metric.",
     )
     parser.add_argument(
-        "--entropy-scaler", type=float, default=1e-2, help="Base learning rate."
+        "--entropy-scaler", type=float, default=1e-3, help="Base learning rate."
     )
     parser.add_argument("--gamma", type=float, default=0.99, help="Base learning rate.")
     parser.add_argument(
