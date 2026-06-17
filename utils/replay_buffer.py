@@ -32,6 +32,7 @@ class ReplayBuffer:
         self.next_state = np.zeros((buffer_size,) + state_dim, dtype=np.float32)
         self.reward = np.zeros((buffer_size, 1), dtype=np.float32)
         self.terminal = np.zeros((buffer_size, 1), dtype=np.float32)
+        self.truncation = np.zeros((buffer_size, 1), dtype=np.float32)
 
         self.dtype = dtype
         self.device = device
@@ -59,17 +60,12 @@ class ReplayBuffer:
         self.diverse_size = 0
         self.diverse_ptr = 0
 
-        if self.retention_strategy in ["diverse_recent", "uniform"]:
-            if self.retention_strategy == "uniform":
-                self.diversity_weight = 1.0
-                self.recency_weight = 0.0
-                self.recent_fraction = 0.0
-
+        if self.retention_strategy == "diverse_recent":
             if self.buffer_size <= 1:
                 self.recent_capacity = self.buffer_size
             else:
                 proposed_recent = int(round(self.buffer_size * self.recent_fraction))
-                self.recent_capacity = min(self.buffer_size - 1, max(0, proposed_recent))
+                self.recent_capacity = min(self.buffer_size - 1, max(1, proposed_recent))
             self.diverse_start = self.recent_capacity
             self.diverse_capacity = self.buffer_size - self.recent_capacity
         self._refresh_size()
@@ -79,26 +75,16 @@ class ReplayBuffer:
             return x.detach().cpu().numpy()
         return x
 
-    def append(self, state, action, next_state, reward, terminal):
+    def append(self, state, action, next_state, reward, terminal, truncation=0.0):
         state = self.pre_process(state)
         action = self.pre_process(action)
         next_state = self.pre_process(next_state)
         reward = self.pre_process(reward)
         terminal = self.pre_process(terminal)
+        truncation = self.pre_process(truncation)
 
-        if self.retention_strategy in ["diverse_recent", "uniform"]:
-            self._append_diverse_recent(state, action, next_state, reward, terminal)
-            return
-
-        if self.retention_strategy == "random":
-            if self.size < self.buffer_size:
-                idx = self.size
-            else:
-                idx = int(self.rng.integers(0, self.buffer_size))
-            self._write_at(
-                idx, state, action, next_state, reward, terminal, update_stats=False
-            )
-            self.size = min(self.size + 1, self.buffer_size)
+        if self.retention_strategy == "diverse_recent":
+            self._append_diverse_recent(state, action, next_state, reward, terminal, truncation)
             return
 
         self._write_at(
@@ -108,13 +94,14 @@ class ReplayBuffer:
             next_state,
             reward,
             terminal,
+            truncation=truncation,
             update_stats=False,
         )
         self.ptr = (self.ptr + 1) % self.buffer_size
         self.size = min(self.size + 1, self.buffer_size)
 
     def _refresh_size(self):
-        if self.retention_strategy in ["diverse_recent", "uniform"]:
+        if self.retention_strategy == "diverse_recent":
             self.size = self.recent_size + self.diverse_size
         else:
             self.size = min(self.size, self.buffer_size)
@@ -126,9 +113,6 @@ class ReplayBuffer:
     def _transition_feature(self, state, action, next_state, reward, terminal):
         state = self._sanitize_array(state).reshape(-1)
         action = self._sanitize_array(action).reshape(-1)
-        if self.retention_strategy == "uniform":
-            return np.concatenate([state, action], axis=0)
-
         next_state = self._sanitize_array(next_state).reshape(-1)
         reward = self._sanitize_array(reward).reshape(-1)
         terminal = self._sanitize_array(terminal).reshape(-1)
@@ -157,6 +141,7 @@ class ReplayBuffer:
         next_state,
         reward,
         terminal,
+        truncation=0.0,
         embedding=None,
         novelty=None,
         insert_id=None,
@@ -167,6 +152,7 @@ class ReplayBuffer:
         self.next_state[idx] = self._sanitize_array(next_state)
         self.reward[idx] = self._sanitize_array(reward)
         self.terminal[idx] = self._sanitize_array(terminal)
+        self.truncation[idx] = self._sanitize_array(truncation)
         if update_stats or embedding is not None:
             if embedding is None:
                 embedding = self._embed_transition(state, action, next_state, reward, terminal)
@@ -199,7 +185,7 @@ class ReplayBuffer:
         return np.concatenate([head, tail], axis=0)
 
     def _valid_indices(self):
-        if self.retention_strategy in ["diverse_recent", "uniform"]:
+        if self.retention_strategy == "diverse_recent":
             recent = self._recent_indices()
             diverse = self._diverse_indices()
             if recent.size == 0:
@@ -225,7 +211,7 @@ class ReplayBuffer:
         age = np.maximum(0, self.insert_counter - insert_ids)
         return np.exp(-age / float(self.recency_horizon))
 
-    def _append_diverse_recent(self, state, action, next_state, reward, terminal):
+    def _append_diverse_recent(self, state, action, next_state, reward, terminal, truncation):
         embedding = self._embed_transition(state, action, next_state, reward, terminal)
         insert_id = self.insert_counter
         self.insert_counter += 1
@@ -240,6 +226,7 @@ class ReplayBuffer:
                 next_state,
                 reward,
                 terminal,
+                truncation=truncation,
                 embedding=embedding,
                 novelty=recent_novelty,
                 insert_id=insert_id,
@@ -258,6 +245,7 @@ class ReplayBuffer:
                     next_state,
                     reward,
                     terminal,
+                    truncation=truncation,
                     embedding=embedding,
                     novelty=novelty,
                     insert_id=insert_id,
@@ -291,6 +279,7 @@ class ReplayBuffer:
                         next_state,
                         reward,
                         terminal,
+                        truncation=truncation,
                         embedding=embedding,
                         novelty=novelty,
                         insert_id=insert_id,
@@ -322,6 +311,10 @@ class ReplayBuffer:
         buffer_dict = {
             "state": self.state[valid_indices].tolist(),
             "action": self.action[valid_indices].tolist(),
+            "next_state": self.next_state[valid_indices].tolist(),
+            "reward": self.reward[valid_indices].tolist(),
+            "terminal": self.terminal[valid_indices].tolist(),
+            "truncation": self.truncation[valid_indices].tolist(),
             "meta": {
                 "retention_strategy": self.retention_strategy,
                 "size": int(valid_indices.size),
