@@ -148,9 +148,6 @@ wandb
 # log/eval_log/*
 log/train_log/*
 
-# Ignore all shell scripts (any .sh files)
-*.sh
-
 # Ignore nohup output file (in any directory)
 nohup.out
 
