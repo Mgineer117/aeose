@@ -316,11 +316,12 @@ class Trainer:
             best_path = os.path.join(self.logger.log_dir, "best_model.pth")
             torch.save(model_cpu.state_dict(), best_path)
             if (
-                hasattr(self.policy, "replay_buffer")
-                and self.policy.replay_buffer is not None
+                hasattr(self.policy, "replay_buffers")
+                and self.policy.replay_buffers is not None
             ):
-                best_buffer_path = os.path.join(self.logger.log_dir, "best_buffer.json")
-                self.policy.replay_buffer.save_to_json(best_buffer_path)
+                for name, buf in self.policy.replay_buffers.items():
+                    best_buffer_path = os.path.join(self.logger.log_dir, f"best_buffer_{name}.json")
+                    buf.save_to_json(best_buffer_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
         # Only save checkpoint + replay buffer when forced (final eval).
@@ -331,6 +332,4 @@ class Trainer:
             model_cpu.state_dict(),
             os.path.join(self.logger.checkpoint_dir, f"model_{e}.pth"),
         )
-        self.policy.replay_buffer.save_to_json(
-            os.path.join(self.logger.checkpoint_dir, f"replay_buffer_{e}.json")
-        )
+

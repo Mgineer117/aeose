@@ -74,22 +74,32 @@ class PPO_Algorithm(nn.Module):
         return trainer.train()
 
     def define_policy(self):
-        replay_buffer = ReplayBuffer(
-            state_dim=self.args.state_dim,
-            action_dim=self.args.action_dim,
-            buffer_size=200_000,
-            batch_size=self.args.batch_size,
-            device=self.args.device,
-            retention_strategy=self.args.ppo_buffer_strategy,
-            recent_fraction=self.args.ppo_buffer_recent_fraction,
-            diversity_weight=self.args.ppo_buffer_diversity_weight,
-            recency_weight=self.args.ppo_buffer_recency_weight,
-            random_swap_prob=self.args.ppo_buffer_random_swap_prob,
-            candidate_pool_size=self.args.ppo_buffer_candidate_pool_size,
-            recency_horizon=self.args.ppo_buffer_recency_horizon,
-            projection_dim=self.args.ppo_buffer_projection_dim,
-            seed=self.args.seed,
-        )
+        replay_buffers = {
+            "uniform": ReplayBuffer(
+                state_dim=self.args.state_dim,
+                action_dim=self.args.action_dim,
+                buffer_size=100_000,
+                batch_size=self.args.batch_size,
+                device=self.args.device,
+                retention_strategy="uniform",
+            ),
+            "fifo": ReplayBuffer(
+                state_dim=self.args.state_dim,
+                action_dim=self.args.action_dim,
+                buffer_size=100_000,
+                batch_size=self.args.batch_size,
+                device=self.args.device,
+                retention_strategy="fifo",
+            ),
+            "random": ReplayBuffer(
+                state_dim=self.args.state_dim,
+                action_dim=self.args.action_dim,
+                buffer_size=100_000,
+                batch_size=self.args.batch_size,
+                device=self.args.device,
+                retention_strategy="random",
+            ),
+        }
 
         actor = PPO_Actor(
             input_dim=self.args.state_dim,
@@ -108,7 +118,7 @@ class PPO_Algorithm(nn.Module):
         self.policy = PPO_Learner(
             actor=actor,
             critic=critic,
-            replay_buffer=replay_buffer,
+            replay_buffers=replay_buffers,
             actor_lr=self.args.actor_lr,
             critic_lr=self.args.critic_lr,
             num_minibatch=self.args.num_minibatch,

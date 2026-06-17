@@ -19,7 +19,7 @@ class PPO_Learner(Base):
         self,
         actor: PPO_Actor,
         critic: PPO_Critic,
-        replay_buffer: ReplayBuffer,
+        replay_buffers: dict,
         actor_lr: float = 3e-4,
         critic_lr: float = 5e-4,
         num_minibatch: int = 8,
@@ -37,7 +37,7 @@ class PPO_Learner(Base):
 
         # constants
         self.name = "PPO"
-        self.replay_buffer = replay_buffer
+        self.replay_buffers = replay_buffers
         self.device = device
 
         self.state_dim = actor.state_dim
@@ -98,16 +98,17 @@ class PPO_Learner(Base):
         except Exception:
             pass
 
-        # Store batch data in replay buffer
+        # Store batch data in replay buffers
         for i in range(batch["states"].shape[0]):
             # Use `dones` (terminal OR truncation) from the sampler buffer
-            self.replay_buffer.append(
-                batch["states"][i],
-                batch["actions"][i],
-                batch["next_states"][i],
-                batch["rewards"][i],
-                batch.get("dones", batch.get("terminals"))[i],
-            )
+            for buf in self.replay_buffers.values():
+                buf.append(
+                    batch["states"][i],
+                    batch["actions"][i],
+                    batch["next_states"][i],
+                    batch["rewards"][i],
+                    batch.get("dones", batch.get("terminals"))[i],
+                )
 
         # Ingredients: Convert batch data to tensors
         # Only normalize observations; use base preprocess for other fields
