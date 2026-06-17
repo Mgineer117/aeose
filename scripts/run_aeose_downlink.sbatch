@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=18
 #SBATCH --cpus-per-task=3
-#SBATCH --mem=220G
+#SBATCH --mem=400G
 #SBATCH --gres=gpu:1
 #SBATCH --time=7-00:00:00
 #SBATCH --output=aeose_downlink.o%j
