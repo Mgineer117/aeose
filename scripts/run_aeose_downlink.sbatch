@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=aeose_downlink
 #SBATCH --account=bhqw-delta-gpu
-#SBATCH --partition=gpuA4000x4
+#SBATCH --partition=gpuA100x4-preempt
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=4
 #SBATCH --cpus-per-task=64
