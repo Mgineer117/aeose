@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=4
 #SBATCH --cpus-per-task=64
-#SBATCH --mem=250G
+#SBATCH --mem=240G
 #SBATCH --time=2-00:00:00
 #SBATCH --output=aeose_downlink.o%j
 #SBATCH --mail-type=FAIL
