@@ -29,6 +29,7 @@ class PD_Algorithm(nn.Module):
             policy=self.policy,
             logger=self.logger,
             writer=self.writer,
+            init_timesteps=getattr(self.args, "init_timesteps", 0),
             timesteps=self.args.epochs,
             log_interval=self.args.log_interval,
             eval_num=self.args.eval_num,
@@ -49,6 +50,18 @@ class PD_Algorithm(nn.Module):
             activation=nn.LeakyReLU(),
             device=self.args.device,
         )
+
+        import os
+        import json
+        latest_model_path = os.path.join(self.logger.log_dir, "latest_model.pth")
+        resume_state_path = os.path.join(self.logger.log_dir, "resume_state.json")
+        if os.path.exists(latest_model_path) and os.path.exists(resume_state_path):
+            print(f"Resuming student from latest checkpoint at {latest_model_path}!")
+            checkpoint = torch.load(latest_model_path, map_location=self.args.device)
+            actor.load_state_dict(checkpoint)
+            with open(resume_state_path, "r") as f:
+                state = json.load(f)
+                self.args.init_timesteps = state.get("step", 0)
 
         target_actor = PPO_Actor(
             input_dim=self.args.state_dim,

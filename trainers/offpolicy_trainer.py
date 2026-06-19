@@ -285,6 +285,20 @@ class OffPolicyTrainer:
                 self.policy.replay_buffer.save_to_json(best_buffer_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
+        # Always save the 'latest' checkpoint for resuming
+        latest_model_path = os.path.join(self.logger.log_dir, "latest_model.pth")
+        torch.save(model_cpu.state_dict(), latest_model_path)
+        
+        if hasattr(self.policy, "replay_buffer") and self.policy.replay_buffer is not None:
+            latest_buffer_path = os.path.join(self.logger.log_dir, "latest_buffer.json")
+            self.policy.replay_buffer.save_to_json(latest_buffer_path)
+            
+        # Save resume state (the current timestep)
+        resume_state_path = os.path.join(self.logger.log_dir, "resume_state.json")
+        import json
+        with open(resume_state_path, "w") as f:
+            json.dump({"step": e}, f)
+
         # Periodic step-keyed checkpoint: every 10th eval, or forced (final).
         periodic_due = eval_idx is not None and eval_idx > 0 and eval_idx % 10 == 0
         if not (force or periodic_due):

@@ -40,6 +40,7 @@ class WandbLogger(BaseLogger):
         log_dir: str = "log",
         log_txt: bool = True,
         fps: int = 10,
+        wandb_id: str = None,
     ) -> None:
         super().__init__(log_dir, log_txt, name)
         self.fps = fps
@@ -48,7 +49,7 @@ class WandbLogger(BaseLogger):
                 project=project,
                 group=group,
                 name=name,
-                id=str(uuid.uuid4()),
+                id=wandb_id if wandb_id else str(uuid.uuid4()),
                 resume="allow",
                 config=config,  # type: ignore
             )

@@ -1,13 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=aeose_desat
-#SBATCH --account=huytran1-ic
-#SBATCH --partition=csl
+#SBATCH --account=bhqw-delta-gpu
+#SBATCH --partition=gpuA4000x4
 #SBATCH --nodes=1
-#SBATCH --ntasks=18
-#SBATCH --cpus-per-task=3
-#SBATCH --mem=400G
-#SBATCH --gres=gpu:1
-#SBATCH --time=7-00:00:00
+#SBATCH --gpus-per-node=4
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=250G
+#SBATCH --time=2-00:00:00
 #SBATCH --output=aeose_desat.o%j
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=minjae5@illinois.edu

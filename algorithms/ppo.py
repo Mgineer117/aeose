@@ -64,6 +64,7 @@ class PPO_Algorithm(nn.Module):
             writer=self.writer,
             episode_len=episode_len,
             timesteps=self.args.timesteps,
+            init_timesteps=getattr(self.args, "init_timesteps", 0),
             log_interval=self.args.log_interval,
             eval_num=self.args.eval_num,
             rendering=self.args.rendering,
@@ -122,7 +123,25 @@ class PPO_Algorithm(nn.Module):
             device=self.args.device,
         )
 
-        if self.args.load_model:
+        import os
+        import json
+        latest_model_path = os.path.join(self.logger.log_dir, "latest_model.pth")
+        resume_state_path = os.path.join(self.logger.log_dir, "resume_state.json")
+        latest_buffer_path = os.path.join(self.logger.log_dir, "latest_buffer.json")
+        
+        if os.path.exists(latest_model_path) and os.path.exists(resume_state_path):
+            print(f"Resuming from latest checkpoint at {latest_model_path}!")
+            checkpoint = torch.load(latest_model_path, map_location=self.args.device)
+            self.policy.actor.load_state_dict(checkpoint)
+            
+            if os.path.exists(latest_buffer_path) and hasattr(self.policy, "replay_buffer"):
+                self.policy.replay_buffer.load_from_json(latest_buffer_path)
+                
+            with open(resume_state_path, "r") as f:
+                state = json.load(f)
+                self.args.init_timesteps = state.get("step", 0)
+
+        elif self.args.load_model:
             model_path = (
                 f"model/model({'_'.join(str(x) for x in self.args.actor_fc_dim)}).pth"
             )

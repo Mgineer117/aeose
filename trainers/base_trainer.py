@@ -323,6 +323,20 @@ class Trainer:
                 self.policy.replay_buffer.save_to_json(best_buffer_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
+        # Always save the 'latest' checkpoint for resuming
+        latest_model_path = os.path.join(self.logger.log_dir, "latest_model.pth")
+        torch.save(model_cpu.state_dict(), latest_model_path)
+        
+        if hasattr(self.policy, "replay_buffer") and self.policy.replay_buffer is not None:
+            latest_buffer_path = os.path.join(self.logger.log_dir, "latest_buffer.json")
+            self.policy.replay_buffer.save_to_json(latest_buffer_path)
+            
+        # Save resume state (the current timestep)
+        resume_state_path = os.path.join(self.logger.log_dir, "resume_state.json")
+        import json
+        with open(resume_state_path, "w") as f:
+            json.dump({"step": e}, f)
+
         # Only save checkpoint + replay buffer when forced (final eval).
         if not force:
             return
@@ -331,6 +345,7 @@ class Trainer:
             model_cpu.state_dict(),
             os.path.join(self.logger.checkpoint_dir, f"model_{e}.pth"),
         )
-        self.policy.replay_buffer.save_to_json(
-            os.path.join(self.logger.checkpoint_dir, f"replay_buffer_{e}.json")
-        )
+        if hasattr(self.policy, "replay_buffer") and self.policy.replay_buffer is not None:
+            self.policy.replay_buffer.save_to_json(
+                os.path.join(self.logger.checkpoint_dir, f"replay_buffer_{e}.json")
+            )

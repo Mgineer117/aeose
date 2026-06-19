@@ -30,12 +30,31 @@ class DDPG_Algorithm(nn.Module):
             batch_size=self.args.batch_size,
             device=self.args.device,
         )
+        import os
+        import json
+        latest_model_path = os.path.join(self.logger.log_dir, "latest_model.pth")
+        resume_state_path = os.path.join(self.logger.log_dir, "resume_state.json")
+        latest_buffer_path = os.path.join(self.logger.log_dir, "latest_buffer.json")
+        
+        if os.path.exists(latest_model_path) and os.path.exists(resume_state_path):
+            print(f"Resuming from latest checkpoint at {latest_model_path}!")
+            checkpoint = torch.load(latest_model_path, map_location=self.args.device)
+            self.policy.actor.load_state_dict(checkpoint)
+            
+            if os.path.exists(latest_buffer_path):
+                replay_buffer.load_from_json(latest_buffer_path)
+                
+            with open(resume_state_path, "r") as f:
+                state = json.load(f)
+                self.args.init_timesteps = state.get("step", 0)
+
         trainer = OffPolicyTrainer(
             env=self.env,
             policy=self.policy,
             replay_buffer=replay_buffer,
             logger=self.logger,
             writer=self.writer,
+            init_timesteps=getattr(self.args, "init_timesteps", 0),
             timesteps=self.args.timesteps,
             log_interval=self.args.log_interval,
             eval_num=self.args.eval_num,

@@ -11,7 +11,7 @@ from utils.get_args import get_args
 from utils.get_env import get_env
 
 
-def run(args, seed, unique_id, exp_time, run_id):
+def run(args, seed, unique_id, exp_time, run_id, wandb_id=None):
     # fix seed
     seed_all(seed)
 
@@ -23,7 +23,7 @@ def run(args, seed, unique_id, exp_time, run_id):
     args.episode_len = getattr(env, "max_steps", None)
     args.is_discrete = env.action_space.__class__.__name__ == "Discrete"
 
-    logger, writer = setup_logger(args, unique_id, exp_time, seed)
+    logger, writer = setup_logger(args, unique_id, exp_time, seed, wandb_id=wandb_id)
 
     # run algorithm
     if args.algo_name == "ppo":
@@ -66,7 +66,11 @@ if __name__ == "__main__":
     # multiprocessing start method is set here.
 
     init_args = get_args()
-    unique_id = str(uuid.uuid4())[:4]
+    
+    # Generate a deterministic unique_id based on environment and architecture to allow resuming
+    arch_str = "".join(map(str, init_args.actor_fc_dim))
+    unique_id = f"{init_args.env_name}_{arch_str}"
+    
     exp_time = datetime.datetime.now().strftime("%m-%d_%H-%M-%S.%f")
 
     random.seed(init_args.seed)
@@ -80,6 +84,9 @@ if __name__ == "__main__":
     for seed in seeds:
         args = get_args()
         args.seed = seed
+        
+        # Generate deterministic wandb_id per seed to allow wandb resuming
+        wandb_id = f"aeos_{args.env_name}_{args.algo_name}_{arch_str}_{seed}"
 
-        run(args, seed, unique_id, exp_time, args.run_id)
+        run(args, seed, unique_id, exp_time, args.run_id, wandb_id=wandb_id)
     concat_csv_columnwise_and_delete(folder_path=args.logdir)

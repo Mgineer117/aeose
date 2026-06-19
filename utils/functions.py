@@ -13,7 +13,7 @@ from log.wandb_logger import WandbLogger
 from utils.wrapper import FetchWrapper, ObsNormWrapper, PointMazeWrapper
 
 
-def setup_logger(args, unique_id, exp_time, seed):
+def setup_logger(args, unique_id, exp_time, seed, wandb_id=None):
     """
     setup logger both using WandB and Tensorboard
     Return: WandB logger, Tensorboard logger
@@ -39,6 +39,7 @@ def setup_logger(args, unique_id, exp_time, seed):
         name=args.name,
         log_dir=args.logdir,
         log_txt=True,
+        wandb_id=wandb_id,
     )
     logger.save_config(default_cfg, verbose=True)
 
