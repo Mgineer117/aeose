@@ -20,12 +20,12 @@ ENV=charge
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 1         --seed 1 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 1         --seed 2 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 1         --seed 3 --env-name $ENV &
-python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 2         --seed 1 --env-name $ENV &
-python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 2         --seed 2 --env-name $ENV &
-python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 2         --seed 3 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 4         --seed 1 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 4         --seed 2 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 4         --seed 3 --env-name $ENV &
+python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 16        --seed 1 --env-name $ENV &
+python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 16        --seed 2 --env-name $ENV &
+python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 16        --seed 3 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 64 64     --seed 1 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 64 64     --seed 2 --env-name $ENV &
 python3 main.py --project aeos --num-workers 3 --gpu-idx 0 --actor-fc-dim 64 64     --seed 3 --env-name $ENV &
