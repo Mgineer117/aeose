@@ -4,7 +4,7 @@
 #SBATCH --partition=gpuA100x8
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=54  # 3 CPUs x 18 parallel python processes
 #SBATCH --mem=240G
 #SBATCH --time=2-00:00:00
 #SBATCH --output=aeose_downlink.o%j
