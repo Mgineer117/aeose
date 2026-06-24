@@ -82,6 +82,14 @@ def get_args():
     )
 
     parser.add_argument(
+        "--checkpoint-interval-sec",
+        type=float,
+        default=1800.0,
+        help="Wall-clock seconds between rolling resume checkpoints "
+        "(latest_model.pth + resume_state.json). Decoupled from the eval "
+        "cadence so a cluster timeout loses at most this much progress.",
+    )
+    parser.add_argument(
         "--log-interval", type=int, default=10, help="Number of training epochs."
     )
     parser.add_argument(

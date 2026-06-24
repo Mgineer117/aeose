@@ -73,6 +73,43 @@ class PPO_Learner(Base):
         #
         self.to(self.dtype).to(self.device)
 
+    def get_training_state(self) -> dict:
+        """Full state required to *resume training* (not just run inference):
+        actor + critic weights, the shared optimizer's Adam moments, and the
+        observation-normalization running statistics. Saving only the actor
+        (the old behavior) restarts the critic, optimizer, and obs-normalizer
+        from scratch on resume, which disrupts learning."""
+        state = {
+            "actor": self.actor.state_dict(),
+            "critic": self.critic.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+        }
+        if getattr(self, "obs_rms", None) is not None:
+            state["obs_rms"] = {
+                "mean": self.obs_rms.mean,
+                "var": self.obs_rms.var,
+                "count": self.obs_rms.count,
+            }
+        return state
+
+    def load_training_state(self, ckpt) -> None:
+        """Inverse of get_training_state(). Falls back to treating ``ckpt`` as a
+        bare actor state_dict for backward compatibility with old actor-only
+        checkpoints."""
+        if not (isinstance(ckpt, dict) and "actor" in ckpt):
+            self.actor.load_state_dict(ckpt)  # legacy actor-only checkpoint
+            return
+        self.actor.load_state_dict(ckpt["actor"])
+        if "critic" in ckpt:
+            self.critic.load_state_dict(ckpt["critic"])
+        if "optimizer" in ckpt:
+            self.optimizer.load_state_dict(ckpt["optimizer"])
+        rms = ckpt.get("obs_rms")
+        if rms is not None and getattr(self, "obs_rms", None) is not None:
+            self.obs_rms.mean = rms["mean"]
+            self.obs_rms.var = rms["var"]
+            self.obs_rms.count = rms["count"]
+
     def forward(self, state: np.ndarray, deterministic: bool = False):
         state = self.preprocess_state(state)
         a, metaData = self.actor(state, deterministic=deterministic)

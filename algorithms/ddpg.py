@@ -61,6 +61,7 @@ class DDPG_Algorithm(nn.Module):
             warmup_samples=self.args.warmup_samples,
             rendering=self.args.rendering,
             seed=self.args.seed,
+            checkpoint_interval=getattr(self.args, "checkpoint_interval_sec", 1800.0),
         )
 
         return trainer.train()

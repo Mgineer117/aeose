@@ -37,6 +37,7 @@ class PD_Algorithm(nn.Module):
             seed=self.args.seed,
             student_rollout_steps=self.args.pd_student_rollout_steps,
             student_rollout_deterministic=self.args.pd_student_rollout_deterministic,
+            checkpoint_interval=getattr(self.args, "checkpoint_interval_sec", 1800.0),
         )
 
         return trainer.train()

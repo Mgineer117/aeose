@@ -70,6 +70,7 @@ class PPO_Algorithm(nn.Module):
             rendering=self.args.rendering,
             seed=self.args.seed,
             async_sampling=getattr(self.args, "async_sampling", False),
+            checkpoint_interval=getattr(self.args, "checkpoint_interval_sec", 1800.0),
         )
 
         return trainer.train()
@@ -132,8 +133,14 @@ class PPO_Algorithm(nn.Module):
         if os.path.exists(latest_model_path) and os.path.exists(resume_state_path):
             print(f"Resuming from latest checkpoint at {latest_model_path}!")
             checkpoint = torch.load(latest_model_path, map_location=self.args.device)
-            self.policy.actor.load_state_dict(checkpoint)
-            
+            # Restore the full training state (actor+critic+optimizer+obs_rms),
+            # not just the actor, so training continues rather than restarting
+            # the critic/optimizer/normalizer from scratch.
+            if hasattr(self.policy, "load_training_state"):
+                self.policy.load_training_state(checkpoint)
+            else:
+                self.policy.actor.load_state_dict(checkpoint)
+
             if os.path.exists(latest_buffer_path) and hasattr(self.policy, "replay_buffer"):
                 self.policy.replay_buffer.load_from_json(latest_buffer_path)
                 

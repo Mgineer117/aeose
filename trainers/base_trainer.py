@@ -32,6 +32,7 @@ class Trainer:
         rendering: bool = False,
         seed: int = 0,
         async_sampling: bool = False,
+        checkpoint_interval: float = 1800.0,
     ) -> None:
         self.env = env
         self.policy = policy
@@ -55,6 +56,7 @@ class Trainer:
         self.rendering = rendering
         self.seed = seed
         self.async_sampling = async_sampling
+        self.checkpoint_interval = checkpoint_interval
 
     def train(self) -> dict[str, float]:
         start_time = time.time()
@@ -86,6 +88,7 @@ class Trainer:
         # replay a burst of catch-up evaluations.
         eval_idx = self.init_timesteps // self.eval_interval if self.eval_interval > 0 else 0
         total_clock_time = 0
+        last_ckpt_time = time.time()
         # Kick off the first rollout before entering the loop so the very
         # first `gather()` returns something. Subsequent dispatches are
         # issued right after gather() but before learn(), which lets the
@@ -156,6 +159,13 @@ class Trainer:
                         self._run_eval(
                             step=step, save=True, eval_idx=eval_idx, force_save=True
                         )
+
+                    # Rolling resume checkpoint on a wall-clock interval, kept
+                    # separate from eval cadence so a timeout loses at most
+                    # checkpoint_interval of training, not a full eval window.
+                    if time.time() - last_ckpt_time >= self.checkpoint_interval:
+                        self._save_latest_checkpoint(step)
+                        last_ckpt_time = time.time()
 
                 torch.cuda.empty_cache()
 
@@ -319,6 +329,33 @@ class Trainer:
             video_path = os.path.join(logdir, name)
             self.logger.write_videos(step=step, images=tensor, logdir=video_path)
 
+    def _save_latest_checkpoint(self, step):
+        """Persist the FULL training state for a faithful resume — actor +
+        critic weights, the optimizer's Adam moments, and the observation
+        normalizer (via policy.get_training_state()) — plus the replay buffer
+        and current timestep. Called both at each eval and on a wall-clock
+        interval from the train loop, so a timeout loses at most one interval
+        of progress AND resume continues *training* (not just inference).
+        Falls back to actor-only for policies without get_training_state."""
+        import json
+
+        if hasattr(self.policy, "get_training_state"):
+            train_state = self.policy.get_training_state()
+        elif getattr(self.policy, "actor", None) is not None:
+            train_state = self.policy.actor.state_dict()
+        else:
+            return
+
+        torch.save(
+            train_state, os.path.join(self.logger.log_dir, "latest_model.pth")
+        )
+        if hasattr(self.policy, "replay_buffer") and self.policy.replay_buffer is not None:
+            self.policy.replay_buffer.save_to_json(
+                os.path.join(self.logger.log_dir, "latest_buffer.json")
+            )
+        with open(os.path.join(self.logger.log_dir, "resume_state.json"), "w") as f:
+            json.dump({"step": int(step)}, f)
+
     def save_model(self, e, eval_idx=None, force=False):
         model = self.policy.actor
         if model is None:
@@ -338,19 +375,8 @@ class Trainer:
                 self.policy.replay_buffer.save_to_json(best_buffer_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
-        # Always save the 'latest' checkpoint for resuming
-        latest_model_path = os.path.join(self.logger.log_dir, "latest_model.pth")
-        torch.save(model_cpu.state_dict(), latest_model_path)
-        
-        if hasattr(self.policy, "replay_buffer") and self.policy.replay_buffer is not None:
-            latest_buffer_path = os.path.join(self.logger.log_dir, "latest_buffer.json")
-            self.policy.replay_buffer.save_to_json(latest_buffer_path)
-            
-        # Save resume state (the current timestep)
-        resume_state_path = os.path.join(self.logger.log_dir, "resume_state.json")
-        import json
-        with open(resume_state_path, "w") as f:
-            json.dump({"step": e}, f)
+        # Always refresh the full-state 'latest' checkpoint used for resuming.
+        self._save_latest_checkpoint(e)
 
         # Only save checkpoint + replay buffer when forced (final eval).
         if not force:

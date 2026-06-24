@@ -31,6 +31,7 @@ class OffPolicyTrainer:
         warmup_samples: int = 10_000,
         rendering: bool = False,
         seed: int = 0,
+        checkpoint_interval: float = 1800.0,
     ) -> None:
         self.env = env
         self.random_policy = UniformRandom(
@@ -62,6 +63,7 @@ class OffPolicyTrainer:
 
         self.rendering = rendering
         self.seed = seed
+        self.checkpoint_interval = checkpoint_interval
 
     def train(self) -> dict[str, float]:
         start_time = time.time()
@@ -89,6 +91,7 @@ class OffPolicyTrainer:
         # Skip evals that already fired in earlier chunks.
         eval_idx = self.init_timesteps // self.eval_interval if self.eval_interval > 0 else 0
         policy_infos = {"termination": False}
+        last_ckpt_time = time.time()
         with tqdm(
             total=total,
             initial=self.init_timesteps,
@@ -151,6 +154,12 @@ class OffPolicyTrainer:
                     if step >= self.eval_interval * (eval_idx + 1):
                         eval_idx += 1
                         self._run_eval(step=step, save=True, eval_idx=eval_idx)
+
+                # Rolling resume checkpoint on a wall-clock interval, separate
+                # from eval cadence so a timeout loses at most checkpoint_interval.
+                if time.time() - last_ckpt_time >= self.checkpoint_interval:
+                    self._save_latest_checkpoint(step)
+                    last_ckpt_time = time.time()
 
                 # terminate the training loop
                 if policy_infos["termination"]:
@@ -281,6 +290,29 @@ class OffPolicyTrainer:
             video_path = os.path.join(logdir, name)
             self.logger.write_videos(step=step, images=tensor, logdir=video_path)
 
+    def _save_latest_checkpoint(self, step, model_cpu=None):
+        """Persist the rolling resume checkpoint (latest model + buffer + step).
+        Called both at each eval and on a wall-clock interval from the train
+        loop so a timeout loses at most one interval of progress."""
+        import json
+
+        if model_cpu is None:
+            model = self.policy.actor
+            if model is None:
+                return
+            model_cpu = deepcopy(model).to("cpu")
+
+        torch.save(
+            model_cpu.state_dict(),
+            os.path.join(self.logger.log_dir, "latest_model.pth"),
+        )
+        if hasattr(self.policy, "replay_buffer") and self.policy.replay_buffer is not None:
+            self.policy.replay_buffer.save_to_json(
+                os.path.join(self.logger.log_dir, "latest_buffer.json")
+            )
+        with open(os.path.join(self.logger.log_dir, "resume_state.json"), "w") as f:
+            json.dump({"step": int(step)}, f)
+
     def save_model(self, e, eval_idx=None, force=False):
         model = self.policy.actor
         if model is None:
@@ -300,19 +332,9 @@ class OffPolicyTrainer:
                 self.policy.replay_buffer.save_to_json(best_buffer_path)
             self.last_max_return_mean = np.mean(self.last_return_mean)
 
-        # Always save the 'latest' checkpoint for resuming
-        latest_model_path = os.path.join(self.logger.log_dir, "latest_model.pth")
-        torch.save(model_cpu.state_dict(), latest_model_path)
-        
-        if hasattr(self.policy, "replay_buffer") and self.policy.replay_buffer is not None:
-            latest_buffer_path = os.path.join(self.logger.log_dir, "latest_buffer.json")
-            self.policy.replay_buffer.save_to_json(latest_buffer_path)
-            
-        # Save resume state (the current timestep)
-        resume_state_path = os.path.join(self.logger.log_dir, "resume_state.json")
-        import json
-        with open(resume_state_path, "w") as f:
-            json.dump({"step": e}, f)
+        # Always refresh the 'latest' checkpoint used for resuming (reuse the
+        # cpu copy we already made to avoid a second deepcopy).
+        self._save_latest_checkpoint(e, model_cpu=model_cpu)
 
         # Periodic step-keyed checkpoint: every 10th eval, or forced (final).
         periodic_due = eval_idx is not None and eval_idx > 0 and eval_idx % 10 == 0
