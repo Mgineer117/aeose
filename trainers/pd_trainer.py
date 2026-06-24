@@ -290,8 +290,13 @@ class PDTrainer:
             model_cpu.state_dict(),
             os.path.join(self.logger.log_dir, "latest_model.pth"),
         )
+        # Persist the W&B run id so a resumed job re-attaches to the same run.
+        state = {"step": int(step)}
+        run = getattr(self.logger, "wandb_run", None)
+        if run is not None and getattr(run, "id", None):
+            state["wandb_id"] = run.id
         with open(os.path.join(self.logger.log_dir, "resume_state.json"), "w") as f:
-            json.dump({"step": int(step)}, f)
+            json.dump(state, f)
 
     def save_model(self, e, eval_idx=None, force=False):
         model = self.policy.actor

@@ -353,8 +353,13 @@ class Trainer:
             self.policy.replay_buffer.save_to_json(
                 os.path.join(self.logger.log_dir, "latest_buffer.json")
             )
+        # Persist the W&B run id so a resumed job re-attaches to the same run.
+        state = {"step": int(step)}
+        run = getattr(self.logger, "wandb_run", None)
+        if run is not None and getattr(run, "id", None):
+            state["wandb_id"] = run.id
         with open(os.path.join(self.logger.log_dir, "resume_state.json"), "w") as f:
-            json.dump({"step": int(step)}, f)
+            json.dump(state, f)
 
     def save_model(self, e, eval_idx=None, force=False):
         model = self.policy.actor

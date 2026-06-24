@@ -1,3 +1,4 @@
+import json
 import os
 import random
 
@@ -39,6 +40,24 @@ def setup_logger(args, unique_id, exp_time, seed, wandb_id=None):
     args.logdir = os.path.join(args.logdir, args.group)
     args.unique_id = unique_id
 
+    # W&B id resolution: if this run has an existing checkpoint, reuse the id
+    # stored next to it so the resumed job continues the SAME W&B run. If there
+    # is no checkpoint, start a fresh *random* run (wandb_id=None -> WandbLogger
+    # generates a uuid). This avoids the deterministic-id pitfalls: a deleted
+    # run can't be re-attached, and to start over you just delete the local
+    # checkpoint folder instead of juggling seeds or deleting cloud runs.
+    resume_state_path = os.path.join(args.logdir, args.name, "resume_state.json")
+    resolved_wandb_id = None
+    if os.path.exists(resume_state_path):
+        try:
+            with open(resume_state_path) as f:
+                saved_state = json.load(f)
+            # Prefer the stored id; fall back to the passed-in (legacy
+            # deterministic) id for checkpoints written before ids were saved.
+            resolved_wandb_id = saved_state.get("wandb_id") or wandb_id
+        except Exception:
+            resolved_wandb_id = wandb_id
+
     default_cfg = vars(args)
     logger = WandbLogger(
         config=default_cfg,
@@ -47,7 +66,7 @@ def setup_logger(args, unique_id, exp_time, seed, wandb_id=None):
         name=args.name,
         log_dir=args.logdir,
         log_txt=True,
-        wandb_id=wandb_id,
+        wandb_id=resolved_wandb_id,
     )
     logger.save_config(default_cfg, verbose=True)
 

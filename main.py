@@ -92,7 +92,10 @@ if __name__ == "__main__":
         args.seed = seed
         args.cli_seed = cli_seed  # outer seed group, for collision-free identity
 
-        # Deterministic wandb_id per (outer seed group, run seed) for resuming.
+        # Legacy deterministic wandb_id. Only used as a fallback when resuming a
+        # checkpoint written before the run id was persisted; new runs get a
+        # random id and resumes reuse the id saved in resume_state.json (see
+        # setup_logger).
         wandb_id = f"aeos_{args.env_name}_{args.algo_name}_{arch_str}_g{cli_seed}_s{seed}"
 
         run(args, seed, unique_id, exp_time, args.run_id, wandb_id=wandb_id)
