@@ -37,7 +37,8 @@ for env in "${ENV_LIST[@]}"; do
         continue
     fi
     echo "=== $env ==="
-    bash "$SCRIPT_DIR/launch_chain.sh" "$sbatch_script" "$NUM_CHUNKS"
+    bash "$SCRIPT_DIR/launch_chain.sh" "$sbatch_script" "$NUM_CHUNKS" \
+        || echo "warning: failed to submit chain for '$env'; continuing with the rest" >&2
     echo
 done
 

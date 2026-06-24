@@ -60,10 +60,10 @@ if [ -n "$CONDA_ENV" ] && command -v conda >/dev/null 2>&1; then
         || echo "warning: could not activate conda env '$CONDA_ENV'; using current python3"
 fi
 
-# Default to offline so the test doesn't require a login or clutter your real
-# W&B. To watch the resume continuity online instead (one run that continues
-# from phase 1 into phase 2), run: WANDB_MODE=online bash scripts/test_resume.sh
-export WANDB_MODE=${WANDB_MODE:-offline}
+# Log to W&B online by default so you can inspect the resume curve (one run
+# that continues from phase 1 into phase 2). Requires `wandb login` once.
+# To run without uploading, use: WANDB_MODE=offline bash scripts/test_resume.sh
+export WANDB_MODE=${WANDB_MODE:-online}
 export WANDB_SILENT=true
 # Uses the GPU if one is allocated (main.py defaults to --gpu-idx 0). To force
 # CPU instead, run:  CUDA_VISIBLE_DEVICES="" bash scripts/test_resume.sh
