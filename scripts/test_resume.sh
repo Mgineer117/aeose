@@ -63,8 +63,12 @@ fi
 # Log to W&B online by default so you can inspect the resume curve (one run
 # that continues from phase 1 into phase 2). Requires `wandb login` once.
 # To run without uploading, use: WANDB_MODE=offline bash scripts/test_resume.sh
+# NOTE: not silenced, so the "View run at https://wandb.ai/..." line is printed.
 export WANDB_MODE=${WANDB_MODE:-online}
-export WANDB_SILENT=true
+echo "W&B: mode=$WANDB_MODE  project=aeos_resume_test  (run name: ppo-charge_4-g...)"
+if [ "$WANDB_MODE" = "online" ] && ! wandb status >/dev/null 2>&1; then
+    echo "  -> 'wandb status' failed; if you see no run online, run 'wandb login' first." >&2
+fi
 # Uses the GPU if one is allocated (main.py defaults to --gpu-idx 0). To force
 # CPU instead, run:  CUDA_VISIBLE_DEVICES="" bash scripts/test_resume.sh
 
