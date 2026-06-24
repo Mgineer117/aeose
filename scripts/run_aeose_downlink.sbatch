@@ -14,6 +14,9 @@
 source ~/.bashrc
 conda activate aeos
 
+export CUDA_VISIBLE_DEVICES=0       # make the allocated GPU visible to all child processes
+export WANDB_INIT_TIMEOUT=300       # extend WandB init timeout to 5 min for parallel launches
+
 ENV=downlink
 
 # === All 18 runs on one A100 node, using GPU 0 only ===
