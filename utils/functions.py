@@ -18,12 +18,20 @@ def setup_logger(args, unique_id, exp_time, seed, wandb_id=None):
     setup logger both using WandB and Tensorboard
     Return: WandB logger, Tensorboard logger
     """
-    # Get the current date and time
+    # Group/log dir must be deterministic across cluster job chunks so a
+    # resumed job finds the previous chunk's latest_model.pth. Keying it on
+    # exp_time (a fresh timestamp each launch) would put every chunk in a new
+    # folder and silently disable checkpoint resume, so we key on unique_id
+    # (env + architecture) only.
     if args.group is None:
-        args.group = "-".join((exp_time, unique_id))
+        args.group = unique_id
 
     if args.name is None:
-        args.name = "-".join((args.algo_name, unique_id, "seed:" + str(seed)))
+        # Fold the outer seed group (CLI --seed) into the name so two launches
+        # whose derived per-run seeds happen to coincide don't share a log dir.
+        cli_seed = getattr(args, "cli_seed", None)
+        seed_tag = f"g{cli_seed}_seed:{seed}" if cli_seed is not None else f"seed:{seed}"
+        args.name = "-".join((args.algo_name, unique_id, seed_tag))
 
     if args.project is None:
         args.project = args.task
@@ -44,7 +52,8 @@ def setup_logger(args, unique_id, exp_time, seed, wandb_id=None):
     logger.save_config(default_cfg, verbose=True)
 
     tensorboard_path = os.path.join(logger.log_dir, "tensorboard")
-    os.mkdir(tensorboard_path)
+    # exist_ok=True: on a resumed run log_dir (and tensorboard/) already exist.
+    os.makedirs(tensorboard_path, exist_ok=True)
     writer = SummaryWriter(log_dir=tensorboard_path)
 
     return logger, writer

@@ -71,15 +71,30 @@ class OffPolicyTrainer:
         # === Pre-training baseline eval (no checkpoint save). ===
         self._run_eval(step=self.init_timesteps, save=False)
 
+        # Absolute timestep budget. A resumed chunk trains the remainder rather
+        # than adding another full budget on top of the resumed step; a chunk
+        # that resumes from a completed checkpoint has nothing left to train.
+        total = self.timesteps
+        if self.init_timesteps >= total:
+            self.logger.print(
+                f"{self.policy.name}: resumed at {self.init_timesteps} >= target "
+                f"{total} timesteps; training already complete, skipping."
+            )
+            sampler = getattr(self, "sampler", None)
+            if sampler is not None and hasattr(sampler, "close"):
+                sampler.close()
+            return
+
         # Train loop
-        eval_idx = 0
+        # Skip evals that already fired in earlier chunks.
+        eval_idx = self.init_timesteps // self.eval_interval if self.eval_interval > 0 else 0
         policy_infos = {"termination": False}
         with tqdm(
-            total=self.timesteps + self.init_timesteps,
+            total=total,
             initial=self.init_timesteps,
             desc=f"{self.policy.name} Training (Timesteps)",
         ) as pbar:
-            while pbar.n < self.timesteps + self.init_timesteps:
+            while pbar.n < total:
                 step = pbar.n + 1  # + 1 to avoid zero division
                 self.policy.train()
 

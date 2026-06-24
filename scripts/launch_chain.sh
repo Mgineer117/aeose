@@ -1,26 +1,52 @@
 #!/bin/bash
+set -euo pipefail
 
 # Ensure a script is provided
-if [ -z "$1" ]; then
-    echo "Usage: ./launch_chain.sh <path_to_sbatch_script>"
-    echo "Example: ./launch_chain.sh run_aeose_desat.sbatch"
+if [ -z "${1:-}" ]; then
+    echo "Usage: ./launch_chain.sh <path_to_sbatch_script> [num_chunks]"
+    echo "Example: ./launch_chain.sh run_aeose_desat.sbatch 3"
     exit 1
 fi
 
 SCRIPT=$1
+NUM_CHUNKS=${2:-3}
 
-echo "Chaining 3 runs of $SCRIPT..."
+if [ ! -f "$SCRIPT" ]; then
+    echo "Error: sbatch script '$SCRIPT' not found."
+    exit 1
+fi
 
-# Submit the first 48h chunk
-JOB1=$(sbatch $SCRIPT | awk '{print $4}')
-echo "Submitted chunk 1 (Job ID: $JOB1)"
+# Submit one job, optionally chained after $1 with afterany (so the next chunk
+# runs even when the previous one is killed by the wall-clock limit). Echoes the
+# new job id; aborts the chain if submission fails.
+submit() {
+    local dep_id=$1
+    local out
+    if [ -z "$dep_id" ]; then
+        out=$(sbatch "$SCRIPT")
+    else
+        out=$(sbatch --dependency=afterany:"$dep_id" "$SCRIPT")
+    fi
+    local job_id
+    job_id=$(echo "$out" | awk '{print $4}')
+    if ! [[ "$job_id" =~ ^[0-9]+$ ]]; then
+        echo "Error: failed to parse job id from sbatch output: '$out'" >&2
+        exit 1
+    fi
+    echo "$job_id"
+}
 
-# Submit the second 48h chunk (waits for JOB1 to finish or get killed)
-JOB2=$(sbatch --dependency=afterany:$JOB1 $SCRIPT | awk '{print $4}')
-echo "Submitted chunk 2 (Job ID: $JOB2)"
+echo "Chaining $NUM_CHUNKS runs of $SCRIPT..."
 
-# Submit the final 48h chunk (waits for JOB2)
-JOB3=$(sbatch --dependency=afterany:$JOB2 $SCRIPT | awk '{print $4}')
-echo "Submitted chunk 3 (Job ID: $JOB3)"
+PREV=""
+for ((i = 1; i <= NUM_CHUNKS; i++)); do
+    JOB=$(submit "$PREV")
+    if [ -z "$PREV" ]; then
+        echo "Submitted chunk $i (Job ID: $JOB)"
+    else
+        echo "Submitted chunk $i (Job ID: $JOB, after $PREV)"
+    fi
+    PREV=$JOB
+done
 
-echo "All 3 chunks are queued successfully!"
+echo "All $NUM_CHUNKS chunks are queued successfully!"

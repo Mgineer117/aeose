@@ -67,8 +67,24 @@ class Trainer:
         # model is untrained and not worth keeping.
         self._run_eval(step=self.init_timesteps, save=True)
 
+        # `timesteps` is the absolute budget. We resume by starting the bar at
+        # init_timesteps and training the remainder, NOT by adding another full
+        # budget on top of the resumed step. If a chained job resumes from a
+        # checkpoint that already hit the budget, there's nothing left to do.
+        total = self.timesteps
+        if self.init_timesteps >= total:
+            self.logger.print(
+                f"{self.policy.name}: resumed at {self.init_timesteps} >= target "
+                f"{total} timesteps; training already complete, skipping."
+            )
+            if hasattr(self.sampler, "close"):
+                self.sampler.close()
+            return {"max_eval_return": self.last_max_return_mean}
+
         # Train loop
-        eval_idx = 0
+        # Skip evals that already fired in earlier chunks so a resume doesn't
+        # replay a burst of catch-up evaluations.
+        eval_idx = self.init_timesteps // self.eval_interval if self.eval_interval > 0 else 0
         total_clock_time = 0
         # Kick off the first rollout before entering the loop so the very
         # first `gather()` returns something. Subsequent dispatches are
@@ -77,7 +93,6 @@ class Trainer:
         # the cost of one step of policy staleness.
         if self.async_sampling:
             self.sampler.dispatch(self.policy, seed=self.seed)
-        total = self.timesteps + self.init_timesteps
         with tqdm(
             total=total,
             initial=self.init_timesteps,

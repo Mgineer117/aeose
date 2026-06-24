@@ -73,7 +73,13 @@ if __name__ == "__main__":
     
     exp_time = datetime.datetime.now().strftime("%m-%d_%H-%M-%S.%f")
 
-    random.seed(init_args.seed)
+    # The CLI --seed is the *outer* seed group: it deterministically generates
+    # the per-run seeds below. Two launches with different --seed can draw an
+    # overlapping per-run seed, so the outer seed is folded into the run
+    # identity (name + wandb_id) to keep concurrent runs from colliding on the
+    # same checkpoint folder / W&B run.
+    cli_seed = init_args.seed
+    random.seed(cli_seed)
     seeds = [random.randint(1, 10_000) for _ in range(init_args.num_runs)]
     print(f"-------------------------------------------------------")
     print(f"      Running ID: {unique_id}")
@@ -84,9 +90,10 @@ if __name__ == "__main__":
     for seed in seeds:
         args = get_args()
         args.seed = seed
-        
-        # Generate deterministic wandb_id per seed to allow wandb resuming
-        wandb_id = f"aeos_{args.env_name}_{args.algo_name}_{arch_str}_{seed}"
+        args.cli_seed = cli_seed  # outer seed group, for collision-free identity
+
+        # Deterministic wandb_id per (outer seed group, run seed) for resuming.
+        wandb_id = f"aeos_{args.env_name}_{args.algo_name}_{arch_str}_g{cli_seed}_s{seed}"
 
         run(args, seed, unique_id, exp_time, args.run_id, wandb_id=wandb_id)
     concat_csv_columnwise_and_delete(folder_path=args.logdir)
