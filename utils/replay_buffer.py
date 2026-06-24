@@ -326,3 +326,32 @@ class ReplayBuffer:
 
         with open(filepath, "w") as f:
             json.dump(buffer_dict, f)
+
+    def load_from_json(self, filepath):
+        """Repopulate the buffer from a save_to_json() dump. Transitions are
+        re-inserted through append() so retention bookkeeping (recent/diverse
+        slots, embeddings, counters) stays consistent. Counterpart to
+        save_to_json; used by the checkpoint-restart resume path."""
+        with open(filepath, "r") as f:
+            buffer_dict = json.load(f)
+
+        states = np.asarray(buffer_dict.get("state", []), dtype=np.float32)
+        actions = np.asarray(buffer_dict.get("action", []), dtype=np.float32)
+        next_states = np.asarray(buffer_dict.get("next_state", []), dtype=np.float32)
+        rewards = np.asarray(buffer_dict.get("reward", []), dtype=np.float32)
+        terminals = np.asarray(buffer_dict.get("terminal", []), dtype=np.float32)
+        if buffer_dict.get("truncation") is not None:
+            truncations = np.asarray(buffer_dict["truncation"], dtype=np.float32)
+        else:
+            truncations = np.zeros_like(rewards)
+
+        n = int(states.shape[0]) if states.ndim >= 1 else 0
+        for i in range(n):
+            self.append(
+                states[i],
+                actions[i],
+                next_states[i],
+                rewards[i],
+                terminals[i],
+                truncations[i],
+            )

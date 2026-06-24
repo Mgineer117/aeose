@@ -62,6 +62,10 @@ fi
 
 export WANDB_MODE=offline
 export WANDB_SILENT=true
+# This is a fast functional test of the resume logic, not a perf benchmark, so
+# pin it to CPU. Avoids the CUDA-init warning / silent fallback on nodes whose
+# NVIDIA driver is older than this PyTorch build's CUDA runtime.
+export CUDA_VISIBLE_DEVICES=""
 
 red()   { printf "\033[31m%s\033[0m\n" "$*"; }
 green() { printf "\033[32m%s\033[0m\n" "$*"; }
