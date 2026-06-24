@@ -132,7 +132,13 @@ class PPO_Algorithm(nn.Module):
         
         if os.path.exists(latest_model_path) and os.path.exists(resume_state_path):
             print(f"Resuming from latest checkpoint at {latest_model_path}!")
-            checkpoint = torch.load(latest_model_path, map_location=self.args.device)
+            # weights_only=False: this is our own full-state checkpoint and
+            # holds optimizer state + numpy obs-normalizer stats, not just
+            # tensors, so PyTorch 2.6's weights_only=True default would reject
+            # it. Trusted source (produced by our own training run).
+            checkpoint = torch.load(
+                latest_model_path, map_location=self.args.device, weights_only=False
+            )
             # Restore the full training state (actor+critic+optimizer+obs_rms),
             # not just the actor, so training continues rather than restarting
             # the critic/optimizer/normalizer from scratch.

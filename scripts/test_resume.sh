@@ -49,6 +49,17 @@ COMMON_ARGS=(
     --checkpoint-interval-sec 5
 )
 
+# Make the test self-contained: activate the project's conda env so `python3`
+# resolves to the right interpreter without the caller doing it first. Set
+# CONDA_ENV= (empty) to skip and use whatever python3 is already on PATH.
+CONDA_ENV=${CONDA_ENV:-aeos}
+if [ -n "$CONDA_ENV" ] && command -v conda >/dev/null 2>&1; then
+    # shellcheck disable=SC1091
+    source "$(conda info --base)/etc/profile.d/conda.sh"
+    conda activate "$CONDA_ENV" \
+        || echo "warning: could not activate conda env '$CONDA_ENV'; using current python3"
+fi
+
 export WANDB_MODE=offline
 export WANDB_SILENT=true
 
@@ -90,7 +101,7 @@ green "phase 1 resume_state step = $STEP1"
 bold "== Verifying full-state checkpoint contents =="
 python3 - "$CKPT" <<'PY'
 import sys, torch
-ck = torch.load(sys.argv[1], map_location="cpu")
+ck = torch.load(sys.argv[1], map_location="cpu", weights_only=False)
 if not isinstance(ck, dict):
     raise SystemExit(f"FAIL: checkpoint is {type(ck)}, expected a dict of components")
 required = ["actor", "critic", "optimizer"]
