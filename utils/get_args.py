@@ -228,15 +228,6 @@ def get_args():
         help="Path to a directory for storing the log.",
     )
     parser.add_argument(
-        "--resume-training",
-        action="store_true",
-        help="Resume from the previous run's rolling checkpoint "
-        "(latest_model.pth + resume_state.json) in this run's log dir, and "
-        "re-attach to the same W&B run. When not set, an existing checkpoint "
-        "is ignored and training starts fresh.",
-    )
-
-    parser.add_argument(
         "--planning-horizon",
         type=int,
         default=None,
