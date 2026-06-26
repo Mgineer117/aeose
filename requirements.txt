@@ -1,5 +1,5 @@
 bsk
-bsk-rl==1.2.2
+bsk-rl==1.2.20
 gymnasium==1.1.1
 imageio
 matplotlib
