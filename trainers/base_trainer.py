@@ -217,7 +217,7 @@ class Trainer:
             for t in range(self.episode_len):
                 with torch.no_grad():
                     t0 = time.time()
-                    a, _ = self.policy(state)  # , deterministic=True)
+                    a, _ = self.policy(state, deterministic=False)
                     t1 = time.time()
                     ep_inf.append(t1 - t0)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
@@ -236,12 +236,9 @@ class Trainer:
                 ep_reward.append(rew)
 
                 if done:
-                    discounted_return = self.discounted_return(
-                        ep_reward, self.policy.gamma
-                    )
                     ep_buffer.append(
                         {
-                            "return": discounted_return,
+                            "return": sum(ep_reward),
                             "avg_reward": np.mean(ep_reward),
                             "episode_length": t + 1,
                             "inf_time": np.mean(ep_inf),

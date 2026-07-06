@@ -216,7 +216,7 @@ class OffPolicyTrainer:
             for t in range(self.env.max_steps):
                 with torch.no_grad():
                     t0 = time.time()
-                    a, _ = self.policy(state)  # , deterministic=True)
+                    a, _ = self.policy(state, deterministic=False)
                     t1 = time.time()
                     ep_inf.append(t1 - t0)
                     a = a.cpu().numpy().squeeze(0) if a.shape[-1] > 1 else [a.item()]
@@ -237,9 +237,7 @@ class OffPolicyTrainer:
                 if done:
                     ep_buffer.append(
                         {
-                            "return": self.discounted_return(
-                                ep_reward, self.policy.gamma
-                            ),
+                            "return": sum(ep_reward),
                             "inf_time": np.mean(ep_inf),
                             "image_success": infos.get("image_success_rate", 0),
                             "desat_success": infos.get("desat_success_rate", 0),

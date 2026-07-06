@@ -131,7 +131,7 @@ SAT_ARGS_POWER.update(
         transmitterPowerDraw=-25.0,
         instrumentBaudRate=5 * 8e6,
         basePowerDraw=-10.0,
-        panelArea=0.55,
+        panelArea=0.6,
     )
 )
 
