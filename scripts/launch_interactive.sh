@@ -7,9 +7,12 @@
 # GPUs). This script asks which envs, which model sizes, which seeds and which
 # resources you want, then does the same thing with your answers:
 #
-#   cluster : generates an sbatch script per env and submits it as a
-#             checkpoint-restart chain via launch_chain.sh (what launch_all.sh
-#             does), after letting you pick a partition that has free GPUs.
+#   cluster : generates an sbatch script per env and submits it, after letting
+#             you pick a partition from the ones that have free GPUs. A run
+#             needs about 7-00:00:00; partitions capped below that are
+#             submitted in dependency mode — a checkpoint-restart chain via
+#             launch_chain.sh, as launch_all.sh does — while partitions that
+#             allow a full week get a single job.
 #   local   : runs the same commands directly on this machine, round-robin
 #             over the GPUs you name — no scheduler involved.
 #
@@ -53,6 +56,43 @@ ask() {
 
 # arch_tag "64 64" -> 64x64   (filename-safe architecture label)
 arch_tag() { local IFS=x; echo "$*"; }
+
+# A run needs about a week of wall clock. Partitions capped below that must be
+# chained (checkpoint-restart), which is what launch_chain.sh sets up.
+FULL_RUN="7-00:00:00"
+
+# to_secs "2-00:00:00" -> 172800.  Accepts the SLURM time formats
+# d-hh:mm:ss, d-hh:mm, d-hh, hh:mm:ss and mm:ss. Echoes -1 for an unlimited
+# partition and 0 when the value cannot be parsed.
+to_secs() {
+    local t=$1 days=0 rest
+    case "$t" in
+        infinite|INFINITE|unlimited|UNLIMITED) echo -1; return ;;
+        "" | n/a | N/A) echo 0; return ;;
+    esac
+    if [[ "$t" == *-* ]]; then
+        days=${t%%-*}
+        rest=${t#*-}
+    else
+        rest=$t
+    fi
+    local IFS=: parts
+    read -r -a parts <<< "$rest"
+    local h=0 m=0 s=0
+    case ${#parts[@]} in
+        3) h=${parts[0]}; m=${parts[1]}; s=${parts[2]} ;;
+        2) if [[ "$t" == *-* ]]; then h=${parts[0]}; m=${parts[1]}; else m=${parts[0]}; s=${parts[1]}; fi ;;
+        1) if [[ "$t" == *-* ]]; then h=${parts[0]}; else m=${parts[0]}; fi ;;
+        *) echo 0; return ;;
+    esac
+    local f
+    for f in "$days" "$h" "$m" "$s"; do
+        [[ "$f" =~ ^[0-9]+$ ]] || { echo 0; return; }
+    done
+    # Strip leading zeros so 08 is not read as invalid octal.
+    days=$((10#$days)); h=$((10#$h)); m=$((10#$m)); s=$((10#$s))
+    echo $(( days * 86400 + h * 3600 + m * 60 + s ))
+}
 
 echo "=== aeos interactive launcher ($REPO_ROOT) ==="
 echo
@@ -130,7 +170,7 @@ if [ "$MODE" = cluster ]; then
     # Gres looks like "gpu:a100:8(S:0-7)", GresUsed like "gpu:a100:3(IDX:0-2)".
     echo
     echo "Scanning partitions for idle/mixed nodes with free GPUs..."
-    FREE_TABLE=$(sinfo -h -N -O 'Partition:40,StateLong:20,Gres:60,GresUsed:60' 2>/dev/null \
+    FREE_TABLE=$(sinfo -h -N -O 'Partition:40,StateLong:20,Gres:60,GresUsed:60,Time:20' 2>/dev/null \
       | awk '
         function gpus(s,   n) {
             # first "gpu:...:<count>" field, ignoring any trailing (...) detail
@@ -147,18 +187,20 @@ if [ "$MODE" = cluster ]; then
             if (state != "idle" && state != "mixed") next
             part = $1; sub(/\*$/, "", part)     # strip default-partition marker
             free = gpus($3) - gpus($4)
-            if (free > 0) { total[part] += free; nodes[part] += 1 }
+            if (free > 0) { total[part] += free; nodes[part] += 1; limit[part] = $5 }
         }
-        END { for (p in total) printf "%s %d %d\n", p, total[p], nodes[p] }
+        END { for (p in total) printf "%s %d %d %s\n", p, total[p], nodes[p], limit[p] }
       ' | sort -k2 -nr) || true
 
     if [ -n "$FREE_TABLE" ]; then
         echo
-        printf "  %-3s %-24s %-10s %s\n" "#" "PARTITION" "FREE GPUS" "IDLE/MIX NODES"
+        printf "  %-3s %-24s %-10s %-15s %s\n" "#" "PARTITION" "FREE GPUS" "IDLE/MIX NODES" "TIME LIMIT"
         PART_NAMES=()
-        while read -r p free nodes; do
+        PART_LIMITS=()
+        while read -r p free nodes limit; do
             PART_NAMES+=("$p")
-            printf "  %-3s %-24s %-10s %s\n" "${#PART_NAMES[@]}" "$p" "$free" "$nodes"
+            PART_LIMITS+=("$limit")
+            printf "  %-3s %-24s %-10s %-15s %s\n" "${#PART_NAMES[@]}" "$p" "$free" "$nodes" "$limit"
         done <<< "$FREE_TABLE"
         echo
         echo "Pick a number from the list, or type a partition name directly."
@@ -169,6 +211,7 @@ if [ "$MODE" = cluster ]; then
                 echo "error: choice '$PARTITION' is out of range 1-${#PART_NAMES[@]}" >&2
                 exit 1
             fi
+            PART_LIMIT="${PART_LIMITS[$((PARTITION - 1))]}"
             PARTITION="${PART_NAMES[$((PARTITION - 1))]}"
             echo "  -> $PARTITION"
         fi
@@ -179,15 +222,67 @@ if [ "$MODE" = cluster ]; then
         ask PARTITION "Which partition?" "gpuA100x8"
     fi
 
+    # --- time limit decides whether we chain ------------------------------
+    # Not every path above knows the limit (typed-in name, fallback listing),
+    # so ask SLURM directly when it is still unset.
+    if [ -z "${PART_LIMIT:-}" ]; then
+        PART_LIMIT=$(sinfo -h -p "$PARTITION" -O 'Time:20' 2>/dev/null | head -1 | tr -d ' ') || true
+    fi
+    LIMIT_SECS=$(to_secs "${PART_LIMIT:-}")
+    FULL_SECS=$(to_secs "$FULL_RUN")
+
+    echo
+    if [ "$LIMIT_SECS" -eq 0 ]; then
+        echo "Could not read a time limit for '$PARTITION' — treating it as capped."
+        DEPENDENCY_MODE=1
+        PART_LIMIT="${PART_LIMIT:-unknown}"
+    elif [ "$LIMIT_SECS" -lt 0 ] || [ "$LIMIT_SECS" -ge "$FULL_SECS" ]; then
+        # Room for a full run in one job, so no checkpoint-restart chain needed.
+        echo "Partition '$PARTITION' allows $PART_LIMIT (>= $FULL_RUN): single job, no dependency chain."
+        DEPENDENCY_MODE=0
+    else
+        echo "Partition '$PARTITION' caps jobs at $PART_LIMIT (< $FULL_RUN):"
+        echo "  -> dependency mode; chunks are chained with afterany so each one"
+        echo "     resumes the previous chunk's checkpoint."
+        DEPENDENCY_MODE=1
+    fi
+
     ask ACCOUNT "Which account?" "bhqw-delta-gpu"
     ask GPUS_PER_NODE "GPUs per node to request?" "2"
     ask CPUS_PER_TASK "CPUs per task?" "32"
     ask MEM "Memory?" "240G"
-    ask WALLTIME "Wall time?" "2-00:00:00"
-    ask NUM_CHUNKS "How many chained chunks (1 = no chaining)?" "3"
+
+    if [ "$DEPENDENCY_MODE" -eq 1 ]; then
+        # Ask for the partition cap by default, then chain enough chunks to add
+        # up to a full run.
+        default_wall=$PART_LIMIT
+        [ "$default_wall" = unknown ] && default_wall="2-00:00:00"
+        ask WALLTIME "Wall time per chunk?" "$default_wall"
+        wall_secs=$(to_secs "$WALLTIME")
+        if [ "$wall_secs" -gt 0 ]; then
+            default_chunks=$(( (FULL_SECS + wall_secs - 1) / wall_secs ))
+        else
+            default_chunks=3
+        fi
+        [ "$default_chunks" -lt 1 ] && default_chunks=1
+        ask NUM_CHUNKS "How many chained chunks (~$FULL_RUN total)?" "$default_chunks"
+    else
+        ask WALLTIME "Wall time?" "$FULL_RUN"
+        NUM_CHUNKS=${NUM_CHUNKS:-1}
+    fi
 
     if ! [[ "$GPUS_PER_NODE" =~ ^[1-9][0-9]*$ ]]; then
         echo "error: --gpus-per-node must be a positive integer, got '$GPUS_PER_NODE'" >&2
+        exit 1
+    fi
+    if ! [[ "$NUM_CHUNKS" =~ ^[1-9][0-9]*$ ]]; then
+        echo "error: chunks must be a positive integer, got '$NUM_CHUNKS'" >&2
+        exit 1
+    fi
+    # Refuse a wall time the partition will reject outright.
+    wall_secs=$(to_secs "$WALLTIME")
+    if [ "$LIMIT_SECS" -gt 0 ] && [ "$wall_secs" -gt "$LIMIT_SECS" ]; then
+        echo "error: wall time $WALLTIME exceeds the $PARTITION limit of $PART_LIMIT" >&2
         exit 1
     fi
 
@@ -195,15 +290,20 @@ if [ "$MODE" = cluster ]; then
 
     echo
     echo "--- plan -------------------------------------------------------------"
+    if [ "$DEPENDENCY_MODE" -eq 1 ]; then
+        submission="dependency chain, $NUM_CHUNKS chunk(s) per env"
+    else
+        submission="single job per env"
+    fi
     echo "  mode       : cluster (sbatch)"
-    echo "  envs       : ${ENV_LIST[*]}   (one chained job each)"
-    echo "  partition  : $PARTITION   account: $ACCOUNT"
-    echo "  resources  : ${GPUS_PER_NODE} gpu(s), ${CPUS_PER_TASK} cpus, $MEM, $WALLTIME"
+    echo "  envs       : ${ENV_LIST[*]}"
+    echo "  submission : $submission"
+    echo "  partition  : $PARTITION (limit $PART_LIMIT)   account: $ACCOUNT"
+    echo "  resources  : ${GPUS_PER_NODE} gpu(s), ${CPUS_PER_TASK} cpus, $MEM, $WALLTIME per job"
     echo "  sizes      : $ARCHS"
     echo "  seeds      : ${SEED_LIST[*]}"
     echo "  runs       : $PER_ENV per env ($TOTAL total), round-robin over $GPUS_PER_NODE gpu(s)"
     echo "  workers    : $NUM_WORKERS  (=> $(( PER_ENV * NUM_WORKERS )) worker processes per job)"
-    echo "  chunks     : $NUM_CHUNKS per env"
     echo "  sbatch dir : $GEN_DIR"
     echo "----------------------------------------------------------------------"
     read -r -p "Submit? [y/N] " CONFIRM
@@ -256,12 +356,14 @@ if [ "$MODE" = cluster ]; then
         echo
         echo "=== $env ==="
         echo "wrote $sbatch_file"
+        # launch_chain.sh with 1 chunk is a plain sbatch, with N a dependency
+        # chain — so the same call covers both modes.
         bash "$SCRIPT_DIR/launch_chain.sh" "$sbatch_file" "$NUM_CHUNKS" \
-            || echo "warning: failed to submit chain for '$env'; continuing with the rest" >&2
+            || echo "warning: failed to submit '$env'; continuing with the rest" >&2
     done
 
     echo
-    echo "All chains submitted. Inspect the queue with:  squeue -u \$USER"
+    echo "All jobs submitted. Inspect the queue with:  squeue -u \$USER"
     exit 0
 fi
 
