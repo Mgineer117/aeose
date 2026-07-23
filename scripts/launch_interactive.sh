@@ -178,14 +178,34 @@ if [ "$MODE" = cluster ]; then
             return 0
         }
         {
-            state = $2
-            if (state != "idle" && state != "mixed") next
             part = $1; sub(/\*$/, "", part)     # strip default-partition marker
-            free = gpus($3) - gpus($4)
-            if (free > 0) { total[part] += free; nodes[part] += 1; limit[part] = $5 }
+            # SLURM appends flag characters to the state: mixed$ (reserved),
+            # idle~ (powered down), idle* (unresponsive), mixed# (booting).
+            # Matching "idle"/"mixed" exactly would hide every flagged node.
+            state = $2; sub(/[*~#!%$@+]+$/, "", state)
+            if (state ~ /^(down|drain|drng|fail|error|maint|unknown|future|invalid|reserved|boot|power|planned)/) next
+            tot = gpus($3)
+            if (tot <= 0) next                  # not a GPU node
+            free = tot - gpus($4)
+            if (free < 0) free = 0
+            gpu_total[part] += tot
+            gpu_free[part] += free
+            limit[part] = $5
+            if (free > 0) nodes[part] += 1
         }
-        END { for (p in total) printf "%s %d %d %s\n", p, total[p], nodes[p], limit[p] }
-      ' | sort -k2 -nr) || true
+        END {
+            # FREE rows become the menu; BUSY rows answer "why is my partition
+            # missing?" — it has GPUs, they are just all allocated right now.
+            for (p in gpu_total) {
+                if (gpu_free[p] > 0)
+                    printf "FREE %s %d %d %s\n", p, gpu_free[p], nodes[p], limit[p]
+                else
+                    printf "BUSY %s %d %s\n", p, gpu_total[p], limit[p]
+            }
+        }
+      ') || true
+    BUSY_TABLE=$(printf '%s\n' "$FREE_TABLE" | awk '$1 == "BUSY" {print $2}' | sort | tr '\n' ' ')
+    FREE_TABLE=$(printf '%s\n' "$FREE_TABLE" | awk '$1 == "FREE" {$1 = ""; sub(/^ /, ""); print}' | sort -k2 -nr)
 
     if [ -n "$FREE_TABLE" ]; then
         echo
@@ -197,8 +217,13 @@ if [ "$MODE" = cluster ]; then
             PART_LIMITS+=("$limit")
             printf "  %-3s %-24s %-10s %-15s %s\n" "${#PART_NAMES[@]}" "$p" "$free" "$nodes" "$limit"
         done <<< "$FREE_TABLE"
+        if [ -n "$BUSY_TABLE" ]; then
+            echo
+            echo "  GPU partitions with none free right now: $BUSY_TABLE"
+        fi
         echo
-        echo "Pick a number from the list, or type a partition name directly."
+        echo "Pick a number from the list, or type a partition name directly"
+        echo "(any partition works, including a busy one — you just queue)."
         ask PARTITION "Which partition?" "${PART_NAMES[0]}"
         # A bare number selects from the table above.
         if [[ "$PARTITION" =~ ^[0-9]+$ ]]; then
@@ -209,6 +234,15 @@ if [ "$MODE" = cluster ]; then
             PART_LIMIT="${PART_LIMITS[$((PARTITION - 1))]}"
             PARTITION="${PART_NAMES[$((PARTITION - 1))]}"
             echo "  -> $PARTITION"
+        else
+            # Typed a name (or took the default): reuse the table's limit when
+            # it is one of the listed partitions, rather than re-querying.
+            for idx in "${!PART_NAMES[@]}"; do
+                if [ "${PART_NAMES[$idx]}" = "$PARTITION" ]; then
+                    PART_LIMIT="${PART_LIMITS[$idx]}"
+                    break
+                fi
+            done
         fi
     else
         echo "  (no idle/mixed nodes with free GPUs right now, or sinfo lacks"
@@ -417,14 +451,22 @@ for env in "${ENV_LIST[@]}"; do
         for seed in "${SEED_LIST[@]}"; do
             gpu="${GPU_LIST[$(( i % ${#GPU_LIST[@]} ))]}"
             log_file="$LOG_DIR/${env}_fc${tag}_seed${seed}_gpu${gpu}.log"
-            python3 main.py \
-                --project "$PROJECT" \
-                --env-name "$env" \
-                --gpu-idx "$gpu" \
-                --num-workers "$NUM_WORKERS" \
-                --actor-fc-dim "${arch_dims[@]}" \
-                --seed "$seed" \
-                > "$log_file" 2>&1 &
+            # bash already ignores SIGINT in async children of a non-interactive
+            # script, so Ctrl-C alone does not kill a run. Ignoring HUP too (the
+            # disposition survives exec) additionally keeps runs alive when the
+            # terminal or ssh session goes away, and </dev/null stops a run from
+            # blocking on terminal input.
+            (
+                trap '' INT HUP
+                exec python3 main.py \
+                    --project "$PROJECT" \
+                    --env-name "$env" \
+                    --gpu-idx "$gpu" \
+                    --num-workers "$NUM_WORKERS" \
+                    --actor-fc-dim "${arch_dims[@]}" \
+                    --seed "$seed" \
+                    < /dev/null > "$log_file" 2>&1
+            ) &
             PIDS+=($!)
             echo "launched pid $! : env=$env fc=[${arch_dims[*]}] seed=$seed gpu=$gpu"
             i=$(( i + 1 ))
@@ -435,8 +477,11 @@ for env in "${ENV_LIST[@]}"; do
 done
 
 echo
-echo "$TOTAL run(s) launched. Tail them with:"
+echo "$TOTAL run(s) launched. Useful commands:"
 echo "  tail -f $LOG_DIR/*.log"
-echo "Waiting for all runs (Ctrl-C detaches this shell; runs keep going)..."
+echo "  pkill -f 'main.py --project $PROJECT'   # stop every run"
+echo
+echo "Ctrl-C now only detaches this launcher; the runs keep going."
+trap 'echo; echo "Detached. Runs continue in the background; logs in $LOG_DIR"; exit 0' INT
 wait "${PIDS[@]}"
 echo "All runs finished."
