@@ -276,7 +276,7 @@ if [ "$MODE" = cluster ]; then
         DEPENDENCY_MODE=1
     fi
 
-    ask ACCOUNT "Which account?" "bhqw-delta-gpu"
+    ask ACCOUNT "Which account?" "huytran1-ic"
     ask GPUS_PER_NODE "GPUs per node to request?" "2"
     ask CPUS_PER_TASK "CPUs per task?" "32"
     ask MEM "Memory?" "240G"
