@@ -1,26 +1,28 @@
 #!/bin/bash
 # ---------------------------------------------------------------------------
-# Interactively launch aeos runs, either on the local machine or on SLURM.
+# Interactive front-end for the same sweep launch_all.sh submits.
 #
-#   local   : starts one `python3 main.py` per (arch, seed) in the background
-#             on a GPU you pick — the same thing a run_aeose_*.sbatch body does,
-#             minus the scheduler.
-#   cluster : generates an sbatch script from your answers and submits it,
-#             optionally as a checkpoint-restart chain via launch_chain.sh
-#             (the same mechanism launch_all.sh uses).
+# launch_all.sh submits scripts/run_aeose_<env>.sbatch for every env, each of
+# which runs the fixed 18-run sweep (6 actor sizes x 3 seeds, split over 2
+# GPUs). This script asks which envs, which model sizes, which seeds and which
+# resources you want, then does the same thing with your answers:
 #
-# For cluster mode the partition prompt lists only partitions that currently
-# have idle/mixed nodes with unallocated GPUs, newest `sinfo` data, so you are
-# not queueing behind a full partition by accident.
+#   cluster : generates an sbatch script per env and submits it as a
+#             checkpoint-restart chain via launch_chain.sh (what launch_all.sh
+#             does), after letting you pick a partition that has free GPUs.
+#   local   : runs the same commands directly on this machine, round-robin
+#             over the GPUs you name — no scheduler involved.
 #
-# Every prompt accepts a blank answer to take the shown default.
+# Every prompt accepts a blank answer to take the shown default, so hitting
+# <Enter> through the whole thing reproduces launch_all.sh exactly.
 #
 # Usage (run from anywhere):
 #   bash scripts/launch_interactive.sh
 #
 # Environment overrides skip the matching prompt (handy for re-runs):
-#   MODE=local ENV_NAME=charge GPU_IDX=1 bash scripts/launch_interactive.sh
-#   MODE=cluster ENV_NAME=desat PARTITION=gpuA100x8 bash scripts/launch_interactive.sh
+#   MODE=local ENVS=charge GPUS="0 1" bash scripts/launch_interactive.sh
+#   MODE=cluster ENVS="charge desat" PARTITION=gpuA100x8 SIZE=large \
+#       bash scripts/launch_interactive.sh
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -32,6 +34,12 @@ cd "$REPO_ROOT"
 
 AVAILABLE_ENVS=(charge desat downlink resource)
 
+# Model sizes, semicolon-separated; each entry goes verbatim to --actor-fc-dim,
+# so "64 64" is a two-layer MLP. These match the run_aeose_*.sbatch sweep.
+SIZES_SMALL="1;4;16"
+SIZES_LARGE="64 64;256 256;1024 1024"
+SIZES_FULL="$SIZES_SMALL;$SIZES_LARGE"
+
 # ask VAR "prompt" "default" -- sets VAR unless it is already non-empty.
 ask() {
     local __var=$1 __prompt=$2 __default=$3 __reply
@@ -42,6 +50,9 @@ ask() {
     read -r -p "$__prompt [$__default] " __reply
     printf -v "$__var" '%s' "${__reply:-$__default}"
 }
+
+# arch_tag "64 64" -> 64x64   (filename-safe architecture label)
+arch_tag() { local IFS=x; echo "$*"; }
 
 echo "=== aeos interactive launcher ($REPO_ROOT) ==="
 echo
@@ -58,36 +69,60 @@ case "$MODE" in
     *) echo "error: mode must be 'local' or 'cluster', got '$MODE'" >&2; exit 1 ;;
 esac
 
-# --- 2. environment -------------------------------------------------------
+# --- 2. environments (one or many, like ENVS= in launch_all.sh) -----------
 echo
-echo "Environments: ${AVAILABLE_ENVS[*]}"
-ask ENV_NAME "Which env?" "downlink"
-if ! printf '%s\n' "${AVAILABLE_ENVS[@]}" | grep -qx "$ENV_NAME"; then
-    echo "error: unknown env '$ENV_NAME' (expected one of: ${AVAILABLE_ENVS[*]})" >&2
-    exit 1
+echo "Environments: ${AVAILABLE_ENVS[*]}   ('all' = every one, as launch_all.sh does)"
+ask ENVS "Which env(s)?" "all"
+if [ "$ENVS" = all ]; then
+    ENV_LIST=("${AVAILABLE_ENVS[@]}")
+else
+    read -r -a ENV_LIST <<< "$ENVS"
 fi
+for env in "${ENV_LIST[@]}"; do
+    if ! printf '%s\n' "${AVAILABLE_ENVS[@]}" | grep -qx "$env"; then
+        echo "error: unknown env '$env' (expected: ${AVAILABLE_ENVS[*]} or 'all')" >&2
+        exit 1
+    fi
+done
 
-# --- 3. architectures and seeds ------------------------------------------
-# Semicolon-separated list; each entry is passed verbatim to --actor-fc-dim,
-# so "64 64" means a two-layer MLP.
+# --- 3. model sizes -------------------------------------------------------
 echo
-echo "Actor architectures: semicolon-separated, spaces = extra layers."
-echo "  e.g.  1;4;16        (small)      or   64 64;256 256;1024 1024   (large)"
-ask ARCHS "Which architectures?" "1;4;16"
+echo "Model sizes (--actor-fc-dim):"
+echo "  1) full    $SIZES_FULL   <- the run_aeose_*.sbatch sweep"
+echo "  2) small   $SIZES_SMALL"
+echo "  3) large   $SIZES_LARGE"
+echo "  4) custom  (type your own, semicolon-separated; spaces = extra layers)"
+ask SIZE "Which sizes?" "1"
+case "$SIZE" in
+    1|full)   ARCHS="$SIZES_FULL"  ;;
+    2|small)  ARCHS="$SIZES_SMALL" ;;
+    3|large)  ARCHS="$SIZES_LARGE" ;;
+    4|custom) ARCHS=""; ask ARCHS "Sizes, e.g. '16;128 128'" "$SIZES_FULL" ;;
+    *)        ARCHS="$SIZE" ;;   # anything else is taken as a literal list
+esac
+IFS=';' read -r -a ARCH_LIST <<< "$ARCHS"
+
+# Every entry must be layer widths, so a typo at the prompt above fails here
+# instead of reaching main.py as a bogus --actor-fc-dim.
+for arch in "${ARCH_LIST[@]}"; do
+    if ! [[ "$arch" =~ ^[[:space:]]*[1-9][0-9]*([[:space:]]+[1-9][0-9]*)*[[:space:]]*$ ]]; then
+        echo "error: '$arch' is not a valid layer spec; expected widths like '16' or '64 64'" >&2
+        exit 1
+    fi
+done
+
+# --- 4. the rest of the sweep --------------------------------------------
 ask SEEDS "Which seeds (space-separated)?" "1 2 3"
 ask NUM_WORKERS "Workers per run?" "3"
 ask PROJECT "WandB project?" "aeos"
-
-IFS=';' read -r -a ARCH_LIST <<< "$ARCHS"
 read -r -a SEED_LIST <<< "$SEEDS"
-TOTAL=$(( ${#ARCH_LIST[@]} * ${#SEED_LIST[@]} ))
+
+PER_ENV=$(( ${#ARCH_LIST[@]} * ${#SEED_LIST[@]} ))
+TOTAL=$(( PER_ENV * ${#ENV_LIST[@]} ))
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# arch_tag "64 64" -> 64x64   (filename-safe architecture label)
-arch_tag() { local IFS=x; echo "$*"; }
-
 # ===========================================================================
-# CLUSTER MODE
+# CLUSTER MODE — one chained sbatch per env, exactly like launch_all.sh
 # ===========================================================================
 if [ "$MODE" = cluster ]; then
     # --- partitions with free GPUs ---------------------------------------
@@ -157,20 +192,19 @@ if [ "$MODE" = cluster ]; then
     fi
 
     GEN_DIR="$REPO_ROOT/scripts/generated"
-    SBATCH_FILE="$GEN_DIR/aeose_${ENV_NAME}_${TIMESTAMP}.sbatch"
 
     echo
     echo "--- plan -------------------------------------------------------------"
     echo "  mode       : cluster (sbatch)"
-    echo "  env        : $ENV_NAME"
+    echo "  envs       : ${ENV_LIST[*]}   (one chained job each)"
     echo "  partition  : $PARTITION   account: $ACCOUNT"
     echo "  resources  : ${GPUS_PER_NODE} gpu(s), ${CPUS_PER_TASK} cpus, $MEM, $WALLTIME"
-    echo "  archs      : ${ARCH_LIST[*]}"
+    echo "  sizes      : $ARCHS"
     echo "  seeds      : ${SEED_LIST[*]}"
-    echo "  runs       : $TOTAL  (spread round-robin over $GPUS_PER_NODE gpu(s))"
-    echo "  workers    : $NUM_WORKERS  (=> $(( TOTAL * NUM_WORKERS )) worker processes)"
-    echo "  chunks     : $NUM_CHUNKS"
-    echo "  sbatch file: $SBATCH_FILE"
+    echo "  runs       : $PER_ENV per env ($TOTAL total), round-robin over $GPUS_PER_NODE gpu(s)"
+    echo "  workers    : $NUM_WORKERS  (=> $(( PER_ENV * NUM_WORKERS )) worker processes per job)"
+    echo "  chunks     : $NUM_CHUNKS per env"
+    echo "  sbatch dir : $GEN_DIR"
     echo "----------------------------------------------------------------------"
     read -r -p "Submit? [y/N] " CONFIRM
     case "${CONFIRM:-n}" in
@@ -179,52 +213,60 @@ if [ "$MODE" = cluster ]; then
     esac
 
     mkdir -p "$GEN_DIR"
-    {
-        echo "#!/bin/bash"
-        echo "#SBATCH --job-name=aeose_${ENV_NAME}"
-        echo "#SBATCH --account=${ACCOUNT}"
-        echo "#SBATCH --partition=${PARTITION}"
-        echo "#SBATCH --nodes=1"
-        echo "#SBATCH --gpus-per-node=${GPUS_PER_NODE}"
-        echo "#SBATCH --cpus-per-task=${CPUS_PER_TASK}"
-        echo "#SBATCH --mem=${MEM}"
-        echo "#SBATCH --time=${WALLTIME}"
-        echo "#SBATCH --output=aeose_${ENV_NAME}.o%j"
-        echo "#SBATCH --mail-type=FAIL"
-        echo "#SBATCH --mail-user=${MAIL_USER:-minjae5@illinois.edu}"
-        echo
-        echo "# Generated by scripts/launch_interactive.sh on $(date)"
-        echo "source ~/.bashrc"
-        echo "conda activate aeos"
-        echo
-        echo "export WANDB_INIT_TIMEOUT=300   # parallel launches init slowly"
-        echo
-        i=0
-        for arch in "${ARCH_LIST[@]}"; do
-            read -r -a arch_dims <<< "$arch"
-            for seed in "${SEED_LIST[@]}"; do
-                gpu=$(( i % GPUS_PER_NODE ))
-                echo "python3 main.py --project $PROJECT --env-name $ENV_NAME --gpu-idx $gpu --num-workers $NUM_WORKERS --actor-fc-dim ${arch_dims[*]} --seed $seed &"
-                i=$(( i + 1 ))
-                # Stagger so concurrent WandB inits do not stampede.
-                if [ $(( i % GPUS_PER_NODE )) -eq 0 ]; then echo "sleep 10"; fi
+    for env in "${ENV_LIST[@]}"; do
+        sbatch_file="$GEN_DIR/aeose_${env}_${TIMESTAMP}.sbatch"
+        {
+            echo "#!/bin/bash"
+            echo "#SBATCH --job-name=aeose_${env}"
+            echo "#SBATCH --account=${ACCOUNT}"
+            echo "#SBATCH --partition=${PARTITION}"
+            echo "#SBATCH --nodes=1"
+            echo "#SBATCH --gpus-per-node=${GPUS_PER_NODE}"
+            echo "#SBATCH --cpus-per-task=${CPUS_PER_TASK}"
+            echo "#SBATCH --mem=${MEM}"
+            echo "#SBATCH --time=${WALLTIME}"
+            echo "#SBATCH --output=aeose_${env}.o%j"
+            echo "#SBATCH --mail-type=FAIL"
+            echo "#SBATCH --mail-user=${MAIL_USER:-minjae5@illinois.edu}"
+            echo
+            echo "# Generated by scripts/launch_interactive.sh on $(date)"
+            echo "source ~/.bashrc"
+            echo "conda activate aeos"
+            echo
+            echo "export WANDB_INIT_TIMEOUT=300   # parallel launches init slowly"
+            echo
+            echo "ENV=${env}"
+            echo
+            i=0
+            for arch in "${ARCH_LIST[@]}"; do
+                read -r -a arch_dims <<< "$arch"
+                for seed in "${SEED_LIST[@]}"; do
+                    gpu=$(( i % GPUS_PER_NODE ))
+                    echo "python3 main.py --project $PROJECT --env-name \$ENV --gpu-idx $gpu --num-workers $NUM_WORKERS --actor-fc-dim ${arch_dims[*]} --seed $seed &"
+                    i=$(( i + 1 ))
+                    # Stagger so concurrent WandB inits do not stampede.
+                    if [ $(( i % GPUS_PER_NODE )) -eq 0 ]; then echo "sleep 10"; fi
+                done
             done
-        done
+            echo
+            echo "wait"
+        } > "$sbatch_file"
+        chmod +x "$sbatch_file"
+
         echo
-        echo "wait"
-    } > "$SBATCH_FILE"
-    chmod +x "$SBATCH_FILE"
+        echo "=== $env ==="
+        echo "wrote $sbatch_file"
+        bash "$SCRIPT_DIR/launch_chain.sh" "$sbatch_file" "$NUM_CHUNKS" \
+            || echo "warning: failed to submit chain for '$env'; continuing with the rest" >&2
+    done
 
     echo
-    echo "Wrote $SBATCH_FILE"
-    bash "$SCRIPT_DIR/launch_chain.sh" "$SBATCH_FILE" "$NUM_CHUNKS"
-    echo
-    echo "Inspect the queue with:  squeue -u \$USER"
+    echo "All chains submitted. Inspect the queue with:  squeue -u \$USER"
     exit 0
 fi
 
 # ===========================================================================
-# LOCAL MODE
+# LOCAL MODE — same commands, no scheduler
 # ===========================================================================
 if command -v nvidia-smi >/dev/null 2>&1; then
     echo
@@ -232,25 +274,34 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     nvidia-smi --query-gpu=index,name,memory.used,memory.total \
                --format=csv,noheader || true
 fi
-ask GPU_IDX "Which GPU index?" "0"
-if ! [[ "$GPU_IDX" =~ ^[0-9]+$ ]]; then
-    echo "error: GPU index must be a non-negative integer, got '$GPU_IDX'" >&2
-    exit 1
-fi
+echo
+echo "Runs are spread round-robin over the GPUs you list (the sbatch scripts use two)."
+ask GPUS "Which GPU index/indices (space-separated)?" "0 1"
+read -r -a GPU_LIST <<< "$GPUS"
+for g in "${GPU_LIST[@]}"; do
+    if ! [[ "$g" =~ ^[0-9]+$ ]]; then
+        echo "error: GPU index must be a non-negative integer, got '$g'" >&2
+        exit 1
+    fi
+done
 
-LOG_DIR="$REPO_ROOT/log/interactive/${ENV_NAME}_gpu${GPU_IDX}_${TIMESTAMP}"
+LOG_DIR="$REPO_ROOT/log/interactive/${TIMESTAMP}"
 
 echo
 echo "--- plan -------------------------------------------------------------"
 echo "  mode       : local"
-echo "  env        : $ENV_NAME"
-echo "  gpu        : $GPU_IDX"
-echo "  archs      : ${ARCH_LIST[*]}"
+echo "  envs       : ${ENV_LIST[*]}"
+echo "  gpus       : ${GPU_LIST[*]}"
+echo "  sizes      : $ARCHS"
 echo "  seeds      : ${SEED_LIST[*]}"
+echo "  runs       : $PER_ENV per env, $TOTAL total"
 echo "  workers    : $NUM_WORKERS  (=> $(( TOTAL * NUM_WORKERS )) worker processes total)"
-echo "  runs       : $TOTAL"
 echo "  stdout logs: $LOG_DIR"
 echo "----------------------------------------------------------------------"
+if [ "$TOTAL" -gt 18 ]; then
+    echo "note: $TOTAL concurrent runs is more than one sbatch job's worth — make sure"
+    echo "      this machine has the GPU memory and cores for it."
+fi
 read -r -p "Launch? [y/N] " CONFIRM
 case "${CONFIRM:-n}" in
     y|Y|yes|YES) ;;
@@ -261,24 +312,29 @@ mkdir -p "$LOG_DIR"
 export WANDB_INIT_TIMEOUT=${WANDB_INIT_TIMEOUT:-300}  # parallel launches init slowly
 
 PIDS=()
-for arch in "${ARCH_LIST[@]}"; do
-    read -r -a arch_dims <<< "$arch"
-    tag=$(arch_tag "${arch_dims[@]}")
-    for seed in "${SEED_LIST[@]}"; do
-        log_file="$LOG_DIR/${ENV_NAME}_fc${tag}_seed${seed}.log"
-        python3 main.py \
-            --project "$PROJECT" \
-            --env-name "$ENV_NAME" \
-            --gpu-idx "$GPU_IDX" \
-            --num-workers "$NUM_WORKERS" \
-            --actor-fc-dim "${arch_dims[@]}" \
-            --seed "$seed" \
-            > "$log_file" 2>&1 &
-        PIDS+=($!)
-        echo "launched pid $! : fc=[${arch_dims[*]}] seed=$seed -> $log_file"
+i=0
+for env in "${ENV_LIST[@]}"; do
+    for arch in "${ARCH_LIST[@]}"; do
+        read -r -a arch_dims <<< "$arch"
+        tag=$(arch_tag "${arch_dims[@]}")
+        for seed in "${SEED_LIST[@]}"; do
+            gpu="${GPU_LIST[$(( i % ${#GPU_LIST[@]} ))]}"
+            log_file="$LOG_DIR/${env}_fc${tag}_seed${seed}_gpu${gpu}.log"
+            python3 main.py \
+                --project "$PROJECT" \
+                --env-name "$env" \
+                --gpu-idx "$gpu" \
+                --num-workers "$NUM_WORKERS" \
+                --actor-fc-dim "${arch_dims[@]}" \
+                --seed "$seed" \
+                > "$log_file" 2>&1 &
+            PIDS+=($!)
+            echo "launched pid $! : env=$env fc=[${arch_dims[*]}] seed=$seed gpu=$gpu"
+            i=$(( i + 1 ))
+            # Stagger so concurrent WandB inits do not stampede.
+            if [ $(( i % ${#GPU_LIST[@]} )) -eq 0 ]; then sleep 10; fi
+        done
     done
-    # Stagger architecture groups so WandB init does not thundering-herd.
-    sleep 10
 done
 
 echo
