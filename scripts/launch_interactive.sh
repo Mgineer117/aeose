@@ -4,8 +4,9 @@
 #
 # launch_all.sh submits scripts/run_aeose_<env>.sbatch for every env, each of
 # which runs the fixed 18-run sweep (6 actor sizes x 3 seeds, split over 2
-# GPUs). This script asks which envs, which model sizes, which seeds and which
-# resources you want, then does the same thing with your answers:
+# GPUs). This script runs that same sweep — sizes and seeds are fixed, not
+# prompted for — and asks only where to run it: which envs, which GPUs, and
+# which cluster resources.
 #
 #   cluster : generates an sbatch script per env and submits it, after letting
 #             you pick a partition from the ones that have free GPUs. A run
@@ -24,8 +25,11 @@
 #
 # Environment overrides skip the matching prompt (handy for re-runs):
 #   MODE=local ENVS=charge GPUS="0 1" bash scripts/launch_interactive.sh
-#   MODE=cluster ENVS="charge desat" PARTITION=gpuA100x8 SIZE=large \
+#   MODE=cluster ENVS="charge desat" PARTITION=gpuA100x8 \
 #       bash scripts/launch_interactive.sh
+#
+# The sweep itself is fixed, but ARCHS= and SEEDS= override it if needed:
+#   ARCHS="64 64;256 256" SEEDS="1 2" bash scripts/launch_interactive.sh
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -125,25 +129,15 @@ for env in "${ENV_LIST[@]}"; do
     fi
 done
 
-# --- 3. model sizes -------------------------------------------------------
-echo
-echo "Model sizes (--actor-fc-dim):"
-echo "  1) full    $SIZES_FULL   <- the run_aeose_*.sbatch sweep"
-echo "  2) small   $SIZES_SMALL"
-echo "  3) large   $SIZES_LARGE"
-echo "  4) custom  (type your own, semicolon-separated; spaces = extra layers)"
-ask SIZE "Which sizes?" "1"
-case "$SIZE" in
-    1|full)   ARCHS="$SIZES_FULL"  ;;
-    2|small)  ARCHS="$SIZES_SMALL" ;;
-    3|large)  ARCHS="$SIZES_LARGE" ;;
-    4|custom) ARCHS=""; ask ARCHS "Sizes, e.g. '16;128 128'" "$SIZES_FULL" ;;
-    *)        ARCHS="$SIZE" ;;   # anything else is taken as a literal list
-esac
+# --- 3. the sweep itself (fixed: full size sweep x 3 seeds) --------------
+# Not prompted for — every launch runs the same sweep the run_aeose_*.sbatch
+# scripts do. Override with ARCHS= / SEEDS= if you ever need a subset.
+ARCHS="${ARCHS:-$SIZES_FULL}"
+SEEDS="${SEEDS:-1 2 3}"
 IFS=';' read -r -a ARCH_LIST <<< "$ARCHS"
+read -r -a SEED_LIST <<< "$SEEDS"
 
-# Every entry must be layer widths, so a typo at the prompt above fails here
-# instead of reaching main.py as a bogus --actor-fc-dim.
+# Catch a malformed ARCHS override here rather than in main.py's --actor-fc-dim.
 for arch in "${ARCH_LIST[@]}"; do
     if ! [[ "$arch" =~ ^[[:space:]]*[1-9][0-9]*([[:space:]]+[1-9][0-9]*)*[[:space:]]*$ ]]; then
         echo "error: '$arch' is not a valid layer spec; expected widths like '16' or '64 64'" >&2
@@ -151,11 +145,12 @@ for arch in "${ARCH_LIST[@]}"; do
     fi
 done
 
-# --- 4. the rest of the sweep --------------------------------------------
-ask SEEDS "Which seeds (space-separated)?" "1 2 3"
+echo
+echo "Sweep: sizes $ARCHS"
+echo "       seeds $SEEDS"
+
 ask NUM_WORKERS "Workers per run?" "3"
 ask PROJECT "WandB project?" "aeos"
-read -r -a SEED_LIST <<< "$SEEDS"
 
 PER_ENV=$(( ${#ARCH_LIST[@]} * ${#SEED_LIST[@]} ))
 TOTAL=$(( PER_ENV * ${#ENV_LIST[@]} ))
