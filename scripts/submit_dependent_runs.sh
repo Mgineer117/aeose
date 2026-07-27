@@ -13,7 +13,7 @@ SCRIPT=$1
 shift
 
 PARTITION="csl"
-ACCOUNT="huytran-ic"
+ACCOUNT="huytran1-ic"
 TIME_LIMIT="7-00:00:00"
 NUM_RUNS=22
 

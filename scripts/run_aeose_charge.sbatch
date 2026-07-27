@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=aeose_charge
-#SBATCH --account=huytran-ic
+#SBATCH --account=huytran1-ic
 #SBATCH --partition=csl
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=2

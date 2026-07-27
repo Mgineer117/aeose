@@ -4,7 +4,7 @@ set -euo pipefail
 # Launch sbatch jobs in dependent (chained) mode so subsequent runs resume from checkpoints.
 # Default parameters can be overridden via environment variables.
 
-ACCOUNT="${ACCOUNT:-huytran-ic}"
+ACCOUNT="${ACCOUNT:-huytran1-ic}"
 PARTITION="${PARTITION:-csl}"
 TIME_LIMIT="${TIME_LIMIT:-7-00:00:00}"
 
@@ -25,12 +25,17 @@ fi
 # Submit one job, chained after previous job ID with afterany
 submit() {
     local dep_id=$1
+    local sbatch_args=()
+    [ -n "${ACCOUNT:-}" ] && sbatch_args+=(--account="$ACCOUNT")
+    [ -n "${PARTITION:-}" ] && sbatch_args+=(--partition="$PARTITION")
+    [ -n "${TIME_LIMIT:-}" ] && sbatch_args+=(--time="$TIME_LIMIT")
+    [ -n "$dep_id" ] && sbatch_args+=(--dependency=afterany:"$dep_id")
+
     local out
-    if [ -z "$dep_id" ]; then
-        out=$(sbatch --account="$ACCOUNT" --partition="$PARTITION" --time="$TIME_LIMIT" "$SCRIPT")
-    else
-        out=$(sbatch --account="$ACCOUNT" --partition="$PARTITION" --time="$TIME_LIMIT" --dependency=afterany:"$dep_id" "$SCRIPT")
-    fi
+    out=$(sbatch "${sbatch_args[@]}" "$SCRIPT" 2>&1) || {
+        echo "sbatch submission failed: $out" >&2
+        exit 1
+    }
     local job_id
     job_id=$(echo "$out" | awk '{print $4}')
     if ! [[ "$job_id" =~ ^[0-9]+$ ]]; then
