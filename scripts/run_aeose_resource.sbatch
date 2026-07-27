@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=aeose_resource
-#SBATCH --account=bhqw-delta-gpu
-#SBATCH --partition=gpuA100x8
+#SBATCH --account=huytran-ic
+#SBATCH --partition=csl
 #SBATCH --nodes=1
 #SBATCH --gpus-per-node=2
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=240G
-#SBATCH --time=2-00:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --output=aeose_resource.o%j
 #SBATCH --mail-type=FAIL
 #SBATCH --mail-user=minjae5@illinois.edu
